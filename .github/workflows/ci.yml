@@ -73,6 +73,9 @@ jobs:
             --retry 15 --retry-delay 1 --retry-max-time 45 --retry-all-errors --max-time 3 \
             http://127.0.0.1:8000/health
 
+      - name: Test Compose HTTPS and proxy behavior
+        run: bash scripts/test-nginx.sh
+
       - name: Authenticate to AWS for main deployment
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0

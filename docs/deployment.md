@@ -61,7 +61,9 @@ SSM 에이전트가 Online 상태가 된 뒤 배포합니다.
 컨테이너당 메모리 제한은 384MB이며 재부팅 후 자동으로 시작합니다.
 EC2에는 현재·직전 이미지를 유지하고, ECR에는 업로드한 SHA 태그 이미지를 유지합니다.
 ECR 이미지는 자동 삭제하지 않으므로 필요에 따라 보존 정책을 추가하세요.
-도메인·HTTPS는 별도 설정이며 최초 배포 주소는 `http://54.180.147.18`입니다.
+현재 Elastic IP는 `3.37.142.87`, DNS는 `api.azas.kro.kr`로 연결되어 있습니다.
+HTTPS 최초 적용 전에는 `http://api.azas.kro.kr`로 접근합니다.
+Nginx·Certbot 전환과 최초 적용 절차는 [HTTPS 가이드](https.md)를 참고하세요.
 
 이미지나 SSM 배포 실패는 GitHub Actions에서 확인합니다. SSM Command ID도 로그에 남습니다.
 이전 이미지로 돌아가려면 AWS 권한이 있는 관리자가 `azas-api-deploy` 문서에 이전 SHA 이미지 URI를
