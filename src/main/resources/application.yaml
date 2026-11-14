@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: azas
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+server:
+  port: 8000
+  shutdown: graceful
+  # Production traffic reaches the API only through Nginx, which overwrites these headers.
+  forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: 25
+      min-spare: 2
+    max-connections: 256
+    accept-count: 50
+
+azas:
+  app-name: ${AZAS_APP_NAME:Lunar Landing Site Navigator API}
+  environment: ${AZAS_ENVIRONMENT:local}
+  cors-origins: ${AZAS_CORS_ORIGINS:[]}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    path: /openapi.json
+  swagger-ui:
+    path: /docs

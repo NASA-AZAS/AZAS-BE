@@ -44,7 +44,7 @@ rollback() {
     echo "Restoring $old_image" >&2
     active_image="$old_image"
     install -m 0600 "$env_backup" /etc/azas/compose.env
-    compose up --detach --wait --wait-timeout 90 api nginx
+    compose up --detach --wait --wait-timeout 180 api nginx
     compose exec -T nginx nginx -s reload
   fi
   exit "$status"
@@ -58,20 +58,23 @@ docker rm --force "$candidate" 2>/dev/null || true
 docker run --detach --name "$candidate" --memory 384m --cpus 1 \
   --env-file /etc/azas/app.env --cap-drop ALL --security-opt no-new-privileges "$image_uri"
 candidate_ready=false
-for ((attempt = 0; attempt < 45; attempt++)); do
-  if docker exec "$candidate" python -c \
-    'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2)' \
-    >/dev/null 2>&1; then
+for ((attempt = 0; attempt < 150; attempt++)); do
+  if [[ "$(docker inspect --format '{{.State.Running}}' "$candidate")" != true ]]; then
+    break
+  fi
+  health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$candidate")"
+  if [[ "$health" == healthy ]]; then
     candidate_ready=true
     break
   fi
+  [[ "$health" != unhealthy && "$health" != missing ]] || break
   sleep 1
 done
 [[ "$candidate_ready" == true ]]
 docker rm --force "$candidate"
 
 deploy_started=true
-compose up --detach --wait --wait-timeout 90 api nginx
+compose up --detach --wait --wait-timeout 180 api nginx
 compose exec -T nginx nginx -t
 compose exec -T nginx nginx -s reload
 compose exec -T nginx wget -q -O- http://127.0.0.1:8081/health

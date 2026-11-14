@@ -4,6 +4,7 @@ set -Eeuo pipefail
 # This test owns disposable paths on a GitHub-hosted Linux runner, never EC2.
 [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]
 [[ ! -e /etc/azas && ! -e /opt/azas ]]
+[[ ! -e /usr/local/sbin/azas-deploy ]]
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 test_dir="$(mktemp -d /tmp/azas-rollback-test.XXXXXX)"
 real_docker="$(command -v docker)"
@@ -16,6 +17,7 @@ cleanup() {
   sudo "${compose[@]}" --profile tools down --volumes --remove-orphans 2>/dev/null || true
   docker rm --force azas-api-candidate 2>/dev/null || true
   sudo rm -rf -- /etc/azas /opt/azas
+  sudo rm -f -- /usr/local/sbin/azas-deploy
   [[ "$test_dir" == /tmp/azas-rollback-test.* ]] && rm -rf -- "$test_dir"
 }
 trap cleanup EXIT
@@ -41,12 +43,14 @@ docker tag azas-api:ci "$good_image"
 # This image passes standalone preflight but fails in the Compose environment.
 cat > "$test_dir/Dockerfile" <<'DOCKERFILE'
 FROM azas-api:ci
-CMD ["python", "-c", "import os, uvicorn; assert os.getenv('FORWARDED_ALLOW_IPS') != '*', 'intentional CI failure'; uvicorn.run('app.main:app', host='0.0.0.0', port=8000)"]
+ENTRYPOINT ["/bin/sh", "-c", "if [ \"$SERVER_FORWARD_HEADERS_STRATEGY\" = framework ]; then echo 'intentional CI failure' >&2; exit 1; fi; exec java -jar /app/azas-api.jar"]
 DOCKERFILE
 
 sudo install -d -m 0755 /etc/azas /opt/azas/nginx
 sudo install -m 0644 "$repo_root/deploy/compose.yaml" /opt/azas/compose.yaml
 sudo install -m 0644 "$repo_root"/deploy/nginx/*.conf /opt/azas/nginx/
+sudo install -m 0750 "$repo_root/scripts/deploy.sh" /usr/local/sbin/azas-deploy
+sudo install -m 0750 "$repo_root/scripts/deploy-compose.sh" /opt/azas/deploy-compose.sh
 printf 'ECR_REPOSITORY_URI=example.invalid/azas-api\nAWS_REGION=ap-northeast-2\n' | \
   sudo tee /etc/azas/registry.env > /dev/null
 printf 'AZAS_ENVIRONMENT=test\n' | sudo tee /etc/azas/app.env > /dev/null
@@ -56,9 +60,15 @@ sudo chmod 0600 /etc/azas/*.env
 
 run_deploy() {
   sudo env "PATH=$test_dir/bin:$PATH" "REAL_DOCKER=$real_docker" \
-    bash "$repo_root/scripts/deploy-compose.sh" "$1"
+    /usr/local/sbin/azas-deploy "$1"
 }
 run_deploy "$good_image"
+
+# Installing the first-Spring deployment tools must leave the current API running.
+api_before="$(sudo "${compose[@]}" ps --quiet api)"
+sudo bash "$repo_root/scripts/install-deploy-tools.sh"
+[[ "$(sudo "${compose[@]}" ps --quiet api)" == "$api_before" ]]
+[[ "$(sudo find /opt/azas -maxdepth 1 -type d -name 'before-spring.*' | wc -l)" -eq 1 ]]
 docker build --tag "$bad_image" "$test_dir"
 
 # Capture the real helper's failure without disabling errexit inside the helper.
