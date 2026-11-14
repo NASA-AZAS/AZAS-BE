@@ -2,6 +2,9 @@
 
 Lunar Landing Site Navigator의 FastAPI 백엔드 초기 프로젝트입니다.
 
+협업 규칙은 [조직 공통 기여 가이드](https://github.com/NASA-AZAS/.github/blob/main/CONTRIBUTING.md)를,
+백엔드 코드 작성과 검사 방법은 [백엔드 개발 가이드](CONTRIBUTING.md)를 참고하세요.
+
 ## 로컬 실행
 
 Python 3.11과 [uv](https://docs.astral.sh/uv/getting-started/installation/)를 사용합니다.
