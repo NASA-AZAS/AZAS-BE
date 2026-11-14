@@ -35,7 +35,7 @@ try {
         }
     }
     if (-not $SkipDatabase) {
-        docker compose --env-file deploy/postgres.env --file deploy/compose.local.yaml up --detach --wait postgres
+        docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
         if ($LASTEXITCODE -ne 0) { throw 'Local PostgreSQL startup failed' }
     }
     & .\gradlew.bat bootRun

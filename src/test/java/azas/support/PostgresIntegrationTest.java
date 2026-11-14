@@ -15,7 +15,7 @@ public abstract class PostgresIntegrationTest {
 
     private static PostgreSQLContainer createDatabase() {
         Properties properties = new Properties();
-        try (var input = Files.newInputStream(Path.of("deploy/postgres.env"))) {
+        try (var input = Files.newInputStream(Path.of("docker/postgres.env"))) {
             properties.load(input);
         } catch (IOException exception) {
             throw new IllegalStateException("Could not load the pinned PostgreSQL image", exception);

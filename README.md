@@ -6,44 +6,45 @@ Gradle Wrapper 9.8.2를 사용합니다. 협업 규칙은
 
 ## 로컬 실행
 
-JDK 21과 Docker Desktop을 설치한 뒤 저장소 루트에서 실행합니다.
+JDK 21과 Docker Desktop을 준비하고 저장소 루트에서 실행합니다.
 
 ```powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 .\scripts\run-local.ps1
 ```
 
-스크립트는 로컬 PostgreSQL을 시작하고 `.env.example` 기본값에 `.env`를 덮어씁니다.
-이미 설정한 프로세스 환경변수가 가장 우선합니다. 별도 DB를 쓴다면 연결 변수를 설정하고
-`-SkipDatabase`로 실행하세요. Spring 자체는 `.env`를 자동으로 읽지 않습니다.
-Linux/macOS·IDE 실행은 [DB 가이드](docs/database.md)의 연결 변수를 등록한 뒤
-`./gradlew bootRun`을 사용합니다.
+스크립트는 루트의 `compose.local.yaml`로 PostgreSQL을 시작하고 Spring을 실행합니다.
+환경변수는 기존 프로세스 값 → `.env` → `.env.example` 순서로 우선 적용합니다.
+별도 DB 연결 변수를 설정했다면 `-SkipDatabase`를 사용할 수 있습니다.
+Spring 자체와 IDE 직접 실행은 `.env`를 자동으로 읽지 않으므로 실행 설정에 변수를 등록하세요.
+Linux/macOS와 IntelliJ 실행 방법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
 
-- Swagger UI: http://127.0.0.1:8000/docs (Swagger UI로 리다이렉트)
+- Swagger UI: http://127.0.0.1:8000/docs
 - OpenAPI: http://127.0.0.1:8000/openapi.json
-- 배포 헬스 체크: http://127.0.0.1:8000/health → `{"status":"ok"}`
-- Actuator 상태: http://127.0.0.1:8000/actuator/health
-- DB 포함 배포 준비 상태: http://127.0.0.1:8000/actuator/health/readiness
+- 프로세스 응답: http://127.0.0.1:8000/health → `{"status":"ok"}`
+- DB 포함 readiness: http://127.0.0.1:8000/actuator/health/readiness → `{"status":"UP"}`
 
-`/health`는 프로세스 응답을 확인하며 외부 API나 DB 연결을 보장하지 않습니다.
-컨테이너 배포 검사는 readiness를 사용해 DB 연결까지 확인합니다.
-Actuator는 health만 공개하며 상세 정보는 노출하지 않습니다.
-
-## 빌드와 의존성
+로컬 DB만 시작하거나 중지할 때는 아래 명령을 사용합니다.
 
 ```powershell
-.\gradlew.bat --no-daemon clean check bootJar
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait
+docker compose --env-file docker/postgres.env --file compose.local.yaml down
 ```
 
-의존성은 `build.gradle`에서 관리하고 `gradle.lockfile`로 버전을 고정합니다.
-의존성 변경 시 아래 명령으로 잠금 파일을 갱신하고 함께 커밋하세요.
+DB는 `127.0.0.1:55432`, 데이터베이스 `azas`, 계정 `azas_local` / `azas_local_only`입니다.
+Compose 프로젝트명 `azas-local`과 볼륨 `azas-local_postgres-data`를 유지해 기존 로컬 데이터를
+계속 사용합니다. `down`으로 중지해도 데이터는 남습니다.
+
+## 빌드와 테스트
 
 ```powershell
-.\gradlew.bat --no-daemon clean check bootJar --write-locks
+.\gradlew.bat --no-daemon check bootJar
 ```
 
-Spring Web MVC, Validation, Actuator, Lombok, SpringDoc, JPA, PostgreSQL 드라이버와 Flyway를 포함합니다.
-테스트는 Testcontainers로 PostgreSQL을 시작하므로 Docker가 실행 중이어야 합니다.
-빌드한 JAR을 직접 실행할 때도 `SPRING_DATASOURCE_*` 연결 변수가 필요합니다.
+테스트는 Testcontainers로 별도 PostgreSQL을 자동 실행하므로 Docker가 켜져 있어야 합니다.
+실행 JAR은 `build/libs/azas-api.jar`에 생성되며 직접 실행할 때도 DB 연결 환경변수가 필요합니다.
+의존성은 `build.gradle`, 고정 버전은 `gradle.lockfile`로 관리합니다.
+의존성을 변경하면 `check bootJar --write-locks`로 검증하고 잠금 파일을 함께 커밋하세요.
 
 ## 구조와 환경 설정
 
@@ -51,51 +52,52 @@ Spring Web MVC, Validation, Actuator, Lombok, SpringDoc, JPA, PostgreSQL 드라�
 src/main/java/azas/
   AzasApplication.java
   global/
-    config/             # 환경 설정, CORS, OpenAPI
-    health/             # 배포용 /health
+    config/             # CORS, OpenAPI, 앱 설정
+    health/             # /health
     response/           # ApiResponse, ValidationError
     exception/          # ErrorCode, BusinessException, 전역 처리
-src/main/resources/application.yaml
-src/test/java/azas/
-deploy/                 # Compose, Nginx, 인증서 갱신 설정
-scripts/                # 배포와 통합 검증
-infra/cd.yaml           # ECR, GitHub OIDC, SSM 권한
-infra/database.yaml     # 비공개 RDS, Secrets Manager, EC2 읽기 권한
+src/main/resources/
+  application.yaml
+  db/migration/         # Flyway 업무 SQL
+src/test/               # 실제 PostgreSQL 기반 통합 테스트
+compose.local.yaml      # 로컬 PostgreSQL 전용
+docker/postgres.env     # 로컬·CI PostgreSQL 이미지 digest
+docker/certs/           # 앱 이미지의 공개 RDS CA
+scripts/run-local.ps1   # 로컬 DB 시작과 환경변수 주입
+.github/workflows/ci.yml
 ```
 
-기능 코드는 구현할 때 `azas.domain.<기능명>` 아래에 controller·service·dto 등을 추가합니다.
-공통 응답 형식과 예외 처리 사용법은 [API 개발 규칙](docs/api-conventions.md)을 참고하세요.
-
+기능 코드는 `azas.domain.<기능명>` 아래에 추가합니다.
+공통 응답·예외 처리 사용법은 [API 개발 규칙](docs/api-conventions.md),
+JPA·Flyway 사용법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
 앱 설정은 `application.yaml`, `AZAS_`와 `SPRING_DATASOURCE_` 환경변수를 사용합니다.
-로컬 기본값은 `.env.example`, 운영 DB 값은 Secrets Manager에서 가져옵니다.
-`AZAS_CORS_ORIGINS`는 기존과 같은 JSON 배열이며 기본값은 빈 목록입니다.
-허용하지 않은 origin의 preflight는 Spring MVC에서 403을 반환합니다.
-운영 API는 Nginx를 통해서만 접근하며 Nginx가 덮어쓴 forwarding headers를 신뢰합니다.
+`AZAS_CORS_ORIGINS`는 JSON 배열이며 기본값은 빈 목록입니다.
 
-## Docker
+## 앱 Docker 이미지
+
+Docker Desktop에서 로컬 PostgreSQL을 시작한 뒤 실행합니다.
 
 ```powershell
-Copy-Item .env.example .env
-docker compose --env-file deploy/postgres.env --file deploy/compose.local.yaml up --detach --wait
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait
 docker build -t azas-api .
 docker run --rm --memory 384m --cpus 1 -p 127.0.0.1:8000:8000 --env-file .env --env 'SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:55432/azas?sslmode=disable' azas-api
 ```
 
-JDK 빌드 단계에서 실행 JAR을 만들고 JRE 이미지에서 UID 10001로 실행합니다.
-JVM 힙은 기본 128MB로 제한하고 API 컨테이너는 384MB를 사용합니다.
-개발 도구, 테스트 클래스, `.env`는 실행 이미지에 포함하지 않습니다.
-위 명령은 Docker Desktop 기준입니다. Linux에서는 같은 Docker 네트워크의 DB 주소를 사용하세요.
+Linux에서는 앱과 DB가 연결 가능한 Docker 네트워크의 DB 주소를 사용하세요.
+JDK 단계에서 JAR을 만들고 JRE 이미지의 UID 10001로 실행합니다.
+JVM 힙 기본값은 128MB, 컨테이너 메모리 제한은 384MB이며 healthcheck는 DB readiness를 사용합니다.
+앱 이미지에는 RDS TLS 검증에 필요한 공개 CA를 포함합니다.
 
-## CI/CD
+## CI/CD와 운영 설정
 
-[GitHub Actions](https://github.com/NASA-AZAS/AZAS-BE/actions)는 main 푸시, PR, 수동 실행에서
-Gradle Wrapper 검증과 `clean check bootJar`를 실행합니다. 이후 운영 Docker 이미지,
-384MB 제한에서의 DB 헬스 체크, Compose HTTPS·프록시·환경변수와 이미지 롤백을 검사합니다.
-main에서만 검증한 이미지를 SHA 태그로 ECR에 올리고 OIDC·SSM으로 EC2에 배포합니다.
+[GitHub Actions](https://github.com/NASA-AZAS/AZAS-BE/actions)는 Java·PostgreSQL 통합 테스트,
+로컬 Compose, 앱 이미지의 readiness·스키마·실행 권한·DB 장애/복구를 검사합니다.
+main에서만 검증한 이미지를 SHA 태그로 ECR에 올리고 OIDC·제한된 SSM 문서로 EC2에 전달합니다.
 
-EC2 배포 도구 갱신과 복구 절차는 [배포 가이드](docs/deployment.md)를 참고하세요.
-RDS 생성, Secret 주입, SQL 마이그레이션과 종료 후 정리는 [DB 가이드](docs/database.md)를 참고하세요.
-HTTPS와 인증서 갱신은 [HTTPS 가이드](docs/https.md)를 참고하세요.
+로컬 Compose는 이 레포에서, 운영 Compose·Nginx·Certbot·배포 도구는 EC2에서 관리합니다.
+서버 관리 자료는 EC2의 `/opt/azas/management/README.md`에 있습니다.
+앱과 서버 사이의 약속 및 Actions 변수는 [CI/CD 가이드](docs/deployment.md)를 참고하세요.
 
 - 운영 Swagger UI: https://api.azas.n-e.kr/docs
-- 운영 헬스 체크: https://api.azas.n-e.kr/health
+- 운영 readiness: https://api.azas.n-e.kr/actuator/health/readiness
