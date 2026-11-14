@@ -10,6 +10,10 @@ if [[ "${image_uri%:*}" != "$ECR_REPOSITORY_URI" || ! "$tag" =~ ^[0-9a-f]{40}$ ]
   exit 1
 fi
 
+if [[ -f /etc/azas/compose.env ]]; then
+  exec /opt/azas/deploy-compose.sh "$image_uri"
+fi
+
 exec 9>/var/lock/azas-deploy.lock
 flock -w 300 9
 
