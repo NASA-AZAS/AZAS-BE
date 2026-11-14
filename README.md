@@ -48,6 +48,8 @@ Compose 프로젝트명 `azas-local`과 볼륨 `azas-local_postgres-data`를 유
 
 ## 구조와 환경 설정
 
+Gradle group과 프로젝트명은 `azas`이며, Java 기본 패키지도 `azas`를 사용합니다.
+
 ```text
 src/main/java/azas/
   AzasApplication.java
