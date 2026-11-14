@@ -11,8 +11,9 @@ exec 9>/var/lock/azas-deploy.lock
 flock -w 300 9
 
 active_image="$image_uri"
+active_env=/etc/azas/app.env
 compose() {
-  AZAS_API_IMAGE="$active_image" docker compose --project-name azas \
+  AZAS_API_IMAGE="$active_image" AZAS_APP_ENV_FILE="$active_env" docker compose --project-name azas \
     --env-file /etc/azas/compose.env --file /opt/azas/compose.yaml "$@"
 }
 old_image=""
@@ -28,12 +29,17 @@ deploy_started=false
 env_tmp=""
 env_backup="$(mktemp /etc/azas/compose.env.backup.XXXXXX)"
 cp /etc/azas/compose.env "$env_backup"
+app_backup="$(mktemp /etc/azas/app.env.backup.XXXXXX)"
+cp /etc/azas/app.env "$app_backup"
+candidate_env="$(mktemp /etc/azas/app.env.candidate.XXXXXX)"
+secret_version="$(mktemp /etc/azas/secret-version.candidate.XXXXXX)"
 cleanup() {
   docker rm --force "$candidate" 2>/dev/null || true
   rm -f -- "$auth_dir/config.json"
   rmdir -- "$auth_dir" || true
   [[ -z "$env_tmp" ]] || rm -f -- "$env_tmp"
   rm -f -- "$env_backup"
+  rm -f -- "$app_backup" "$candidate_env" "$secret_version"
 }
 trap cleanup EXIT
 rollback() {
@@ -44,6 +50,8 @@ rollback() {
     echo "Restoring $old_image" >&2
     active_image="$old_image"
     install -m 0600 "$env_backup" /etc/azas/compose.env
+    install -m 0600 "$app_backup" /etc/azas/app.env
+    active_env=/etc/azas/app.env
     compose up --detach --wait --wait-timeout 180 api nginx
     compose exec -T nginx nginx -s reload
   fi
@@ -54,9 +62,24 @@ trap rollback ERR
 aws ecr get-login-password --region "$AWS_REGION" | \
   docker login --username AWS --password-stdin "${ECR_REPOSITORY_URI%%/*}"
 docker pull "$image_uri"
+
+if [[ -f /etc/azas/database.env ]]; then
+  source /etc/azas/database.env
+  DATABASE_SECRET_ARN="$DATABASE_SECRET_ARN" DATABASE_SSL_MODE="${DATABASE_SSL_MODE:-verify-full}" \
+    AWS_REGION="$AWS_REGION" /opt/azas/create-database-env.sh \
+    /etc/azas/app.env "$candidate_env" "$secret_version"
+else
+  cp /etc/azas/app.env "$candidate_env"
+fi
+active_env="$candidate_env"
+backend_network="$(compose config --format json | jq --exit-status --raw-output '.networks.backend.name')"
+if ! docker network inspect "$backend_network" >/dev/null 2>&1; then
+  compose create api
+fi
 docker rm --force "$candidate" 2>/dev/null || true
 docker run --detach --name "$candidate" --memory 384m --cpus 1 \
-  --env-file /etc/azas/app.env --cap-drop ALL --security-opt no-new-privileges "$image_uri"
+  --network "$backend_network" --env-file "$candidate_env" \
+  --cap-drop ALL --security-opt no-new-privileges "$image_uri"
 candidate_ready=false
 for ((attempt = 0; attempt < 150; attempt++)); do
   if [[ "$(docker inspect --format '{{.State.Running}}' "$candidate")" != true ]]; then
@@ -74,6 +97,8 @@ done
 docker rm --force "$candidate"
 
 deploy_started=true
+install -m 0600 "$candidate_env" /etc/azas/app.env
+active_env=/etc/azas/app.env
 compose up --detach --wait --wait-timeout 180 api nginx
 compose exec -T nginx nginx -t
 compose exec -T nginx nginx -s reload
@@ -90,6 +115,9 @@ awk -v image="$image_uri" '
 chmod 0600 "$env_tmp"
 mv -- "$env_tmp" /etc/azas/compose.env
 env_tmp=""
+if [[ -s "$secret_version" ]]; then
+  install -m 0600 "$secret_version" /etc/azas/database-secret-version
+fi
 if [[ -n "$old_image" && "$old_image" != "$image_uri" ]]; then
   printf '%s\n' "$old_image" > /etc/azas/previous-image
 fi

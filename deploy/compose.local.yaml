@@ -1,0 +1,17 @@
+name: azas-local
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?Use --env-file deploy/postgres.env}
+    environment:
+      POSTGRES_DB: azas
+      POSTGRES_USER: azas_local
+      POSTGRES_PASSWORD: azas_local_only
+    ports: ['127.0.0.1:55432:5432']
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U azas_local -d azas']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres-data: {}

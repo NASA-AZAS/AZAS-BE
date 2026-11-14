@@ -41,6 +41,9 @@ jobs:
       - name: Check deployment scripts
         run: for script in scripts/*.sh; do bash -n "$script"; done
 
+      - name: Test secret environment generation
+        run: bash scripts/test-database-env.sh
+
   docker:
     name: Docker build and smoke test
     needs: checks
@@ -62,12 +65,26 @@ jobs:
 
       - name: Check container health endpoint
         run: |
+          source deploy/postgres.env
+          docker network create azas-smoke
+          docker run --detach --name azas-postgres-ci --network azas-smoke --network-alias postgres \
+            --env POSTGRES_DB=azas --env POSTGRES_USER=azas_test --env POSTGRES_PASSWORD=test_only_password \
+            "$POSTGRES_IMAGE"
+          for attempt in $(seq 1 60); do
+            if docker exec azas-postgres-ci pg_isready -U azas_test -d azas; then break; fi
+            sleep 1
+          done
           docker run --detach --name azas-api-ci --memory 384m --cpus 1 \
             --cap-drop ALL --security-opt no-new-privileges \
+            --network azas-smoke \
+            --env 'SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/azas?sslmode=disable' \
+            --env SPRING_DATASOURCE_USERNAME=azas_test --env SPRING_DATASOURCE_PASSWORD=test_only_password \
             --publish 127.0.0.1:8000:8000 azas-api:ci
           curl --fail --silent --show-error \
             --retry 60 --retry-delay 2 --retry-max-time 150 --retry-all-errors --max-time 3 \
             http://127.0.0.1:8000/health
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:8000/actuator/health/readiness | jq --exit-status '.status == "UP"'
 
       - name: Check API schema and process isolation
         run: |
@@ -79,6 +96,16 @@ jobs:
 
       - name: Test Compose HTTPS and proxy behavior
         run: bash scripts/test-nginx.sh
+
+      - name: Check database-aware readiness and recovery
+        run: |
+          docker stop azas-postgres-ci
+          test "$(curl --silent --show-error --max-time 15 --output /tmp/readiness.json \
+            --write-out '%{http_code}' http://127.0.0.1:8000/actuator/health/readiness)" = 503
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8000/health
+          docker start azas-postgres-ci
+          curl --fail --silent --show-error --max-time 10 --retry 20 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:8000/actuator/health/readiness | jq --exit-status '.status == "UP"'
 
       - name: Test failed Compose deployment rollback
         run: bash scripts/test-compose-rollback.sh
@@ -116,6 +143,8 @@ jobs:
             docker logs azas-api-ci
             docker rm --force azas-api-ci
           fi
+          docker rm --force azas-postgres-ci 2>/dev/null || true
+          docker network rm azas-smoke 2>/dev/null || true
 
   deploy:
     name: Deploy to EC2

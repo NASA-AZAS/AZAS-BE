@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import azas.global.exception.BusinessException;
 import azas.global.exception.ErrorCode;
 import azas.global.response.ApiResponse;
+import azas.support.PostgresIntegrationTest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -46,7 +47,7 @@ import org.springframework.web.server.ResponseStatusException;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(ApiExceptionHandlingTests.TestController.class)
-class ApiExceptionHandlingTests {
+class ApiExceptionHandlingTests extends PostgresIntegrationTest {
 
     @Autowired
     MockMvc mvc;

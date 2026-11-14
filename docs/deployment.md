@@ -18,8 +18,10 @@ PR에서는 검사만 실행하며 배포하지 않습니다. `workflow_dispatch
   EC2의 root 소유 배포 도구(`/usr/local/sbin/azas-deploy`)를 실행합니다.
 
 GitHub에 장기 AWS 액세스 키나 SSH 개인 키를 저장하지 않습니다.
-ECR 저장소를 제외한 추가 서버·로드밸런서는 생성하지 않습니다.
-ECR 이미지 저장 용량과 전송에는 사용량에 따른 AWS 요금이 발생할 수 있습니다.
+DB는 별도 `azas-be-database` 스택의 비공개 RDS를 사용합니다.
+EC2 역할이 DB Secret을 읽으며, GitHub는 DB 비밀번호를 전달하지 않습니다.
+생성과 최초 적용 순서는 [DB 가이드](database.md)를 따릅니다.
+ECR·RDS·Secrets Manager 등 AWS 리소스에는 사용량에 따른 요금이 발생합니다.
 
 ## GitHub Actions 변수
 
@@ -48,14 +50,16 @@ sudo bash bootstrap-ec2.sh 389930962915.dkr.ecr.ap-northeast-2.amazonaws.com/aza
 
 Docker 공식 저장소에서 Docker를 설치하고 AWS CLI v2와 배포 도구를 준비합니다.
 SSM 에이전트가 Online 상태가 된 뒤 배포합니다.
-앱 환경변수는 EC2의 `/etc/azas/app.env`에 보관합니다. 이 파일은 재설정하지 않습니다.
+앱 환경변수는 EC2의 `/etc/azas/app.env`에 보관합니다. 배포 때 DB 연결 변수만 Secret에서 갱신합니다.
 프런트엔드 도메인이 정해지면 `AZAS_CORS_ORIGINS`를 JSON 배열로 추가하세요.
 
 ## 동작과 복구
 
 새 이미지는 실행 중인 서비스를 중단하기 전에 별도 컨테이너로 헬스체크합니다.
 검사를 통과하면 Compose API 컨테이너를 교체하고 Nginx를 검사·reload합니다. 공개 포트 80/443은 Nginx가 담당합니다.
-전환 후 검사에 실패하면 이전 이미지와 compose.env를 복구합니다.
+전환 후 검사에 실패하면 이전 이미지와 compose.env, app.env를 복구합니다.
+후보 앱이 이미 적용한 DB migration은 이미지 롤백으로 되돌리지 않습니다.
+스키마 변경은 이전 앱과 호환되게 작성하세요.
 단일 EC2 구성이라 전환 때 짧은 중단이 있습니다. 최초 배포에는 복구할 이전 컨테이너가 없습니다.
 
 컨테이너당 메모리 제한은 384MB이며 재부팅 후 자동으로 시작합니다.
@@ -81,7 +85,8 @@ sudo bash scripts/install-deploy-tools.sh
 ```
 
 설치 도구는 Compose 설정과 셸 문법을 검사하고 배포와 동일한 lock을 사용합니다.
-`/usr/local/sbin/azas-deploy`, `/opt/azas/deploy-compose.sh`, `/opt/azas/compose.yaml`을
+`jq`와 Docker Compose 2.30 이상이 필요합니다.
+`/usr/local/sbin/azas-deploy`, `/opt/azas/deploy-compose.sh`, `/opt/azas/create-database-env.sh`, `/opt/azas/compose.yaml`을
 `/opt/azas/deploy-tools-backup.*`에 백업하고 교체합니다. 실행 중인 컨테이너를 재시작하지 않으며
 app.env, compose.env, 인증서 볼륨과 갱신 타이머를 변경하지 않습니다.
 
@@ -89,11 +94,13 @@ app.env, compose.env, 인증서 볼륨과 갱신 타이머를 변경하지 않�
 후보 컨테이너는 최대 150초, Compose 교체와 복구는 각각 최대 180초 기다립니다.
 Java는 이미지에 포함되므로 EC2 호스트에 JDK를 설치하지 않습니다.
 
-현재 설정 파일과 실행 상태를 확인한 뒤 main에 병합합니다. 배포 후 다음을 확인합니다.
+현재 설정 파일과 실행 상태를 확인한 뒤 main에 병합합니다. 일반 코드 변경은 로컬·CI와
+CD의 자동 상태 검사로 확인합니다. 환경변수·인프라 변경 또는 배포 실패 때는 다음을 확인합니다.
 
 ```bash
 sudo docker compose --project-name azas --env-file /etc/azas/compose.env --file /opt/azas/compose.yaml ps
 curl --fail https://api.azas.n-e.kr/health
+curl --fail https://api.azas.n-e.kr/actuator/health/readiness
 curl --fail --location https://api.azas.n-e.kr/docs > /dev/null
 curl --fail https://api.azas.n-e.kr/openapi.json > /dev/null
 sudo docker stats --no-stream
@@ -102,4 +109,4 @@ sudo docker stats --no-stream
 `/health` 응답은 유지합니다. `/docs`는 Swagger UI로 리다이렉트하며 OpenAPI 내용은 SpringDoc으로
 생성됩니다. CORS 차단 preflight는 403을 반환합니다. `AZAS_CORS_ORIGINS`의
 JSON 배열 형식과 기본 차단 정책은 유지합니다. `.env`는 Docker의 `--env-file`로 주입하며
-로컬 `bootRun`에서는 셸/IDE 환경변수를 사용합니다.
+로컬은 `scripts/run-local.ps1` 또는 셸/IDE 환경변수를 사용합니다.
