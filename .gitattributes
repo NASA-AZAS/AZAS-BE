@@ -1,5 +1,5 @@
 *.sh text eol=lf
-/deploy/postgres.env text eol=lf
+/docker/postgres.env text eol=lf
 *.crt text eol=lf
 /gradlew text eol=lf
 *.bat text eol=crlf

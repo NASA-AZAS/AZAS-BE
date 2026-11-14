@@ -19,7 +19,7 @@ ENV AZAS_ENVIRONMENT=production \
 
 WORKDIR /app
 COPY --from=builder --chown=10001:10001 /workspace/build/libs/azas-api.jar /app/azas-api.jar
-COPY --chown=10001:10001 deploy/certs/rds-ca-bundle.crt /app/certs/rds-ca-bundle.crt
+COPY --chown=10001:10001 docker/certs/rds-ca-bundle.crt /app/certs/rds-ca-bundle.crt
 USER 10001:10001
 
 EXPOSE 8000

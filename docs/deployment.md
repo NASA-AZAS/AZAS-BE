@@ -1,112 +1,65 @@
-# ECR 기반 EC2 자동 배포
+# 앱 CI/CD와 EC2의 경계
 
-`main` 푸시 → Gradle 테스트·JAR 빌드 → Docker 빌드·헬스체크 → ECR 업로드 → SSM으로 EC2 배포.
-PR에서는 검사만 실행하며 배포하지 않습니다. `workflow_dispatch`는 `main`에서 수동 배포할 때 사용합니다.
+이 레포는 Spring 앱, 실행 이미지, 로컬 PostgreSQL Compose와 GitHub Actions를 관리합니다.
+운영 Compose·Nginx·인증서 갱신·배포 도구·AWS 인프라 템플릿은 EC2에서 관리합니다.
 
-## 리소스와 권한
+## 자동 배포 흐름
 
-- AWS 계정: `389930962915`, 리전: `ap-northeast-2`
-- 기존 EC2: `i-0c2ab160f08785697` (`azas-server`)
-- CloudFormation: `azas-be-cd`, 템플릿: `infra/cd.yaml`
-- ECR: `azas-api`, Git 커밋 SHA를 immutable 이미지 태그로 사용
-- GitHub OIDC 공급자: `token.actions.githubusercontent.com`
-- 배포 역할: `azas-be-github-deploy`. 이 저장소 `main`의 정확한 OIDC subject만 허용합니다.
-  이 ECR 저장소에 대한 업로드와 기존 EC2 한 대의 지정 SSM 문서 실행 권한을 가집니다.
-- EC2 역할·인스턴스 프로필: `azas-be-ec2-runtime`.
-  이 ECR 저장소 읽기와 `AmazonSSMManagedInstanceCore` 권한을 가집니다.
-- SSM 문서: `azas-api-deploy`. 이 저장소의 SHA 태그 이미지만 인수로 받으며,
-  EC2의 root 소유 배포 도구(`/usr/local/sbin/azas-deploy`)를 실행합니다.
+`main` 푸시 → Java/PostgreSQL 테스트 → Docker 빌드·검증 → ECR SHA 이미지 업로드 → OIDC/SSM → EC2 배포.
+PR에서는 검사만 수행하고 `workflow_dispatch`의 main 실행으로 수동 재배포할 수 있습니다.
+기존 workflow job 이름과 OIDC·ECR·제한된 SSM 호출 방식은 유지합니다.
 
-GitHub에 장기 AWS 액세스 키나 SSH 개인 키를 저장하지 않습니다.
-DB는 별도 `azas-be-database` 스택의 비공개 RDS를 사용합니다.
-EC2 역할이 DB Secret을 읽으며, GitHub는 DB 비밀번호를 전달하지 않습니다.
-생성과 최초 적용 순서는 [DB 가이드](database.md)를 따릅니다.
-ECR·RDS·Secrets Manager 등 AWS 리소스에는 사용량에 따른 요금이 발생합니다.
+SSM 문서 `azas-api-deploy`는 이미지 URI 하나를 받아 EC2의 `/usr/local/sbin/azas-deploy`를 실행합니다.
+서버 도구가 Secret을 조회해 후보 환경 파일을 만들고 이미지의 Docker HEALTHCHECK로 후보 앱을 검사합니다.
+검사 성공 후 운영 Compose를 전환하며 전환 실패 시 기존 이미지와 환경 파일을 복구합니다.
+GitHub에 DB 비밀번호나 SSH 키를 추가하지 않습니다.
 
 ## GitHub Actions 변수
 
-Repository Settings → Secrets and variables → Actions → Variables:
+Repository Settings의 Actions Variables에서 관리합니다.
 
-| 변수 | 값 |
+| 변수 | 역할 |
 | --- | --- |
-| `AWS_REGION` | `ap-northeast-2` |
-| `AWS_INSTANCE_ID` | `i-0c2ab160f08785697` |
-| `ECR_REPOSITORY_URI` | CloudFormation `RepositoryUri` 출력 |
-| `AWS_DEPLOY_ROLE_ARN` | CloudFormation `DeployRoleArn` 출력 |
-| `SSM_DOCUMENT_NAME` | `azas-api-deploy` |
+| `AWS_REGION` | 배포 리전 |
+| `AWS_INSTANCE_ID` | 기존 앱 EC2 인스턴스 |
+| `ECR_REPOSITORY_URI` | SHA 이미지를 올릴 기존 ECR 저장소 |
+| `AWS_DEPLOY_ROLE_ARN` | main OIDC subject를 허용하는 기존 배포 역할 |
+| `SSM_DOCUMENT_NAME` | 이미지 배포용 제한된 SSM 문서 |
 
-GitHub의 immutable OIDC subject를 사용합니다. 저장소를 재생성하거나 조직을 옮길 때는
-`actions/oidc/customization/sub` API에서 subject를 확인해 스택의 `GitHubSubject`를 갱신하세요.
+앱 코드 변경 시 서버 설정 파일을 레포에서 복사하는 단계는 없습니다. CD는 검증한 이미지 URI를 전달합니다.
 
-## EC2 최초 설정
+## 앱 이미지가 지켜야 하는 계약
 
-1. 스택 생성 후 `InstanceProfileName` 출력에 해당하는 프로필을 기존 EC2에 연결합니다.
-2. `scripts/bootstrap-ec2.sh`와 `scripts/deploy.sh`를 EC2의 같은 폴더에 복사합니다.
-3. EC2에서 아래 명령을 실행합니다.
+- 포트 8000에서 HTTP를 제공하고 Nginx가 전달하는 프록시 헤더를 처리합니다.
+- `/actuator/health/readiness`는 DB 연결이 정상이면 HTTP 200 UP을 반환합니다.
+- Docker HEALTHCHECK, UID 10001과 메모리 384MiB 제한에서 실행 가능한 JVM 기본값을 유지합니다.
+- `AZAS_`, `SPRING_DATASOURCE_` 환경변수를 받습니다. 운영 주입은 서버 배포 도구가 담당합니다.
+- 공개 RDS CA를 `/app/certs/rds-ca-bundle.crt`에 포함합니다. Docker 빌드 원본은 `docker/certs/`입니다.
+- Flyway SQL은 이전 앱과 호환되게 작성합니다. 이미지 롤백은 이미 적용한 SQL을 되돌리지 않습니다.
 
-```bash
-sudo bash bootstrap-ec2.sh 389930962915.dkr.ecr.ap-northeast-2.amazonaws.com/azas-api ap-northeast-2
-```
+## 운영 파일 위치
 
-Docker 공식 저장소에서 Docker를 설치하고 AWS CLI v2와 배포 도구를 준비합니다.
-SSM 에이전트가 Online 상태가 된 뒤 배포합니다.
-앱 환경변수는 EC2의 `/etc/azas/app.env`에 보관합니다. 배포 때 DB 연결 변수만 Secret에서 갱신합니다.
-프런트엔드 도메인이 정해지면 `AZAS_CORS_ORIGINS`를 JSON 배열로 추가하세요.
+| EC2 경로 | 역할 |
+| --- | --- |
+| `/opt/azas/compose.yaml`, `/opt/azas/nginx/` | 운영 Compose와 프록시 설정 |
+| `/usr/local/sbin/azas-deploy` | SSM이 호출하는 배포 진입점 |
+| `/opt/azas/deploy-compose.sh`, `/opt/azas/create-database-env.sh` | 이미지 전환·Secret 주입 |
+| `/etc/azas/` | root 전용 운영 환경 파일 |
+| `/usr/local/sbin/azas-renew-certificate`, `/etc/systemd/system/azas-certbot-renew.*` | 인증서 갱신 |
+| `/opt/azas/management/README.md` | 서버 관리 절차와 기준 자료 위치 |
 
-## 동작과 복구
+분리 이전 main `47efa722b9290b7a38b84071d9de75e14599c410`의 운영 원본·인프라 템플릿·절차는
+EC2의 `/opt/azas/management/baseline-47efa72/`와 같은 폴더의 압축 파일에 보관했습니다.
+이 자료는 분리 시점의 기록이며 현재 운영 파일이 기준입니다. 서버 설정은 EC2에서 백업·검증 후 변경합니다.
 
-새 이미지는 실행 중인 서비스를 중단하기 전에 별도 컨테이너로 헬스체크합니다.
-검사를 통과하면 Compose API 컨테이너를 교체하고 Nginx를 검사·reload합니다. 공개 포트 80/443은 Nginx가 담당합니다.
-전환 후 검사에 실패하면 이전 이미지와 compose.env, app.env를 복구합니다.
-후보 앱이 이미 적용한 DB migration은 이미지 롤백으로 되돌리지 않습니다.
-스키마 변경은 이전 앱과 호환되게 작성하세요.
-단일 EC2 구성이라 전환 때 짧은 중단이 있습니다. 최초 배포에는 복구할 이전 컨테이너가 없습니다.
+## 검증 범위
 
-컨테이너당 메모리 제한은 384MB이며 재부팅 후 자동으로 시작합니다.
-EC2에는 현재·직전 이미지를 유지하고, ECR에는 업로드한 SHA 태그 이미지를 유지합니다.
-ECR 이미지는 자동 삭제하지 않으므로 필요에 따라 보존 정책을 추가하세요.
-현재 Elastic IP는 `3.37.142.87`, DNS는 `api.azas.n-e.kr`로 연결되어 있습니다.
-현재 HTTPS 주소는 `https://api.azas.n-e.kr`입니다.
-Nginx·Certbot 전환과 최초 적용 절차는 [HTTPS 가이드](https.md)를 참고하세요.
+레포 CI는 Java/JPA/Flyway 통합 테스트, PowerShell 문법, 로컬 PostgreSQL Compose,
+앱 이미지의 스키마·실행 권한·DB readiness와 DB 장애/복구를 검사합니다.
+운영 설정을 제거하면서 HTTPS·Certbot·Secret 변환 스크립트·배포 롤백 스크립트의 독립 검사는
+레포 CI에서 제외했습니다. 서버 설정 변경은 관리자가 별도 격리 환경에서 검증합니다.
+보관한 테스트 스크립트를 운영 EC2에서 실행하면 서비스 포트·파일과 충돌할 수 있으므로 실행하지 않습니다.
+CD의 실제 배포에는 기존 서버의 후보·전환 상태 검사와 실패 복구가 계속 적용됩니다.
 
-이미지나 SSM 배포 실패는 GitHub Actions에서 확인합니다. SSM Command ID도 로그에 남습니다.
-이전 이미지로 돌아가려면 AWS 권한이 있는 관리자가 `azas-api-deploy` 문서에 이전 SHA 이미지 URI를
-넣어 실행할 수 있습니다. GitHub의 재실행은 같은 SHA 이미지가 이미 있으면 이를 재사용합니다.
-
-## 서버 배포 도구 갱신
-
-EC2 배포 도구는 이미지의 Docker HEALTHCHECK를 사용합니다.
-배포 스크립트나 Compose 설정을 변경했다면 리뷰·CI를 통과한 PR 커밋을 EC2에 복사하고
-그 체크아웃에서 설치 도구를 실행합니다. 앱 이미지 배포만으로 서버의 설치 파일은 바뀌지 않습니다.
-main 병합이 자동 배포를 시작하므로 필요한 서버 도구 갱신을 먼저 완료합니다.
-
-```bash
-sudo bash scripts/install-deploy-tools.sh
-```
-
-설치 도구는 Compose 설정과 셸 문법을 검사하고 배포와 동일한 lock을 사용합니다.
-`jq`와 Docker Compose 2.30 이상이 필요합니다.
-`/usr/local/sbin/azas-deploy`, `/opt/azas/deploy-compose.sh`, `/opt/azas/create-database-env.sh`, `/opt/azas/compose.yaml`을
-`/opt/azas/deploy-tools-backup.*`에 백업하고 교체합니다. 실행 중인 컨테이너를 재시작하지 않으며
-app.env, compose.env, 인증서 볼륨과 갱신 타이머를 변경하지 않습니다.
-
-도구는 컨테이너 내부의 프로그래밍 언어와 관계없이 Docker HEALTHCHECK 상태를 확인합니다.
-후보 컨테이너는 최대 150초, Compose 교체와 복구는 각각 최대 180초 기다립니다.
-Java는 이미지에 포함되므로 EC2 호스트에 JDK를 설치하지 않습니다.
-
-현재 설정 파일과 실행 상태를 확인한 뒤 main에 병합합니다. 일반 코드 변경은 로컬·CI와
-CD의 자동 상태 검사로 확인합니다. 환경변수·인프라 변경 또는 배포 실패 때는 다음을 확인합니다.
-
-```bash
-sudo docker compose --project-name azas --env-file /etc/azas/compose.env --file /opt/azas/compose.yaml ps
-curl --fail https://api.azas.n-e.kr/health
-curl --fail https://api.azas.n-e.kr/actuator/health/readiness
-curl --fail --location https://api.azas.n-e.kr/docs > /dev/null
-curl --fail https://api.azas.n-e.kr/openapi.json > /dev/null
-sudo docker stats --no-stream
-```
-
-`/health` 응답은 유지합니다. `/docs`는 Swagger UI로 리다이렉트하며 OpenAPI 내용은 SpringDoc으로
-생성됩니다. CORS 차단 preflight는 403을 반환합니다. `AZAS_CORS_ORIGINS`의
-JSON 배열 형식과 기본 차단 정책은 유지합니다. `.env`는 Docker의 `--env-file`로 주입하며
-로컬은 `scripts/run-local.ps1` 또는 셸/IDE 환경변수를 사용합니다.
+일반 앱 변경은 로컬·CI 및 CD의 자동 검사로 확인합니다. 운영 환경변수나 인프라 변경,
+배포 실패 시에는 필요한 서버 점검을 수행합니다. 로컬 DB 실행은 `compose.local.yaml`만 사용합니다.

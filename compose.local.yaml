@@ -1,7 +1,7 @@
 name: azas-local
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:?Use --env-file deploy/postgres.env}
+    image: ${POSTGRES_IMAGE:?Use --env-file docker/postgres.env}
     environment:
       POSTGRES_DB: azas
       POSTGRES_USER: azas_local
