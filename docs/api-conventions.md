@@ -3,6 +3,8 @@
 공통 코드는 `azas.global`로 모읍니다. 기능 코드는 구현할 때
 `azas.domain.<기능명>` 아래에 controller, service, dto, exception 등을 추가합니다.
 현재 사용하지 않는 도메인이나 DB 계층은 미리 만들지 않습니다.
+요청마다 응답의 `X-Request-ID` 헤더로 추적 ID를 제공합니다.
+공통 응답 본문과 별도로 사용할 수 있으며 요청·예외 로그 정책은 [로깅 가이드](logging.md)를 참고하세요.
 
 ```text
 azas/

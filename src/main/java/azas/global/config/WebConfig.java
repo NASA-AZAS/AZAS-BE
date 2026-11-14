@@ -32,6 +32,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOrigins(corsOrigins)
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("Authorization", "Content-Type")
+                .exposedHeaders("X-Request-ID")
                 .allowCredentials(false);
     }
 

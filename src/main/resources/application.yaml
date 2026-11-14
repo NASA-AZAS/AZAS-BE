@@ -37,6 +37,17 @@ azas:
   app-name: ${AZAS_APP_NAME:Lunar Landing Site Navigator API}
   environment: ${AZAS_ENVIRONMENT:local}
   cors-origins: ${AZAS_CORS_ORIGINS:[]}
+  request-logging:
+    slow-request-ms: ${AZAS_SLOW_REQUEST_MS:1000}
+
+logging:
+  level:
+    azas: ${AZAS_LOG_LEVEL:INFO}
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%thread] [requestId=%X{requestId:-}] %logger{36} : %msg %kvp%n%wEx"
+  structured:
+    format:
+      console: ${AZAS_LOG_FORMAT:}
 
 management:
   endpoints:
