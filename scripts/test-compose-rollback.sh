@@ -72,6 +72,6 @@ api_id="$(sudo "${compose[@]}" ps --quiet api)"
 [[ "$(docker inspect --format '{{.Config.Image}}' "$api_id")" == "$good_image" ]]
 sudo grep -Fxq "AZAS_API_IMAGE=$good_image" /etc/azas/compose.env
 health="$(curl --noproxy '*' --fail --silent --show-error --max-time 5 \
-  --resolve api.azas.kro.kr:80:127.0.0.1 http://api.azas.kro.kr/health)"
+  --resolve api.azas.n-e.kr:80:127.0.0.1 http://api.azas.n-e.kr/health)"
 [[ "$health" == '{"status":"ok"}' ]]
 printf 'Failed Compose deployment restored the healthy image and persisted tag\n'

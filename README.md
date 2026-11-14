@@ -80,8 +80,8 @@ PR은 검사만 실행합니다. GitHub OIDC로 인증하며 AWS 액세스 키�
 배포 구성·권한·복구 방법은 [배포 가이드](docs/deployment.md)를 참고하세요.
 
 - 실행 상태: https://github.com/NASA-AZAS/AZAS-BE/actions
-- 배포 API 문서: http://api.azas.kro.kr/docs
-- 배포 헬스체크: http://api.azas.kro.kr/health
+- 배포 API 문서: http://api.azas.n-e.kr/docs
+- 배포 헬스체크: http://api.azas.n-e.kr/health
 - Compose의 FastAPI·Nginx와 Certbot을 사용한 HTTPS 최초 적용: [HTTPS 가이드](docs/https.md)
 
 ## 다음 단계

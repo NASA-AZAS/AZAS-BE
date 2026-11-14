@@ -1,10 +1,13 @@
-# Compose 기반 api.azas.kro.kr HTTPS
+# Compose 기반 api.azas.n-e.kr HTTPS
 
 DNS A 레코드는 Elastic IP `3.37.142.87`로 연결되어 있습니다. FastAPI·Nginx는
 `deploy/compose.yaml`의 상시 서비스이며, Certbot은 `tools` profile에서 발급·갱신 때만 실행합니다.
 호스트에는 Nginx·Certbot을 설치하지 않습니다. 기존 ECR·SSM·단일 EC2를 유지합니다.
 ALB·ACM은 추가 로드밸런서 비용과 관리 범위 때문에 도입하지 않습니다.
 운영 서버 변경과 인증서 발급은 PR 검토·병합 후 별도 적용합니다.
+
+기존 `kro.kr` 상위 도메인의 공유 인증서 발급 한도로 인해, 승인된 대체 도메인
+`api.azas.n-e.kr`을 사용합니다. Elastic IP와 ECR·SSM 리소스는 그대로 유지합니다.
 
 ## 구성과 검증
 
@@ -59,7 +62,7 @@ Compose 배포 도구로 위임합니다. 이후 명령을 위해 EC2 쉘에 함
 ```bash
 dc() { sudo docker compose --project-name azas --env-file /etc/azas/compose.env --file /opt/azas/compose.yaml "$@"; }
 dc ps
-curl --fail http://api.azas.kro.kr/health
+curl --fail http://api.azas.n-e.kr/health
 ```
 
 ### 2. 인증서 발급과 HTTPS 활성화
@@ -70,7 +73,7 @@ curl --fail http://api.azas.kro.kr/health
 ```bash
 CERTBOT_EMAIL='관리자가-승인한-이메일'
 dc run --rm --no-deps certbot certonly --webroot -w /var/www/letsencrypt \
-  --cert-name api.azas.kro.kr -d api.azas.kro.kr \
+  --cert-name api.azas.n-e.kr -d api.azas.n-e.kr \
   --email "$CERTBOT_EMAIL" --agree-tos --non-interactive
 sudo sed -i 's@^AZAS_NGINX_CONFIG=.*@AZAS_NGINX_CONFIG=./nginx/azas-https.conf@' /etc/azas/compose.env
 dc up --detach --wait --wait-timeout 90 api nginx
