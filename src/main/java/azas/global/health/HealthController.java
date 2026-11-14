@@ -1,4 +1,4 @@
-package azas.api;
+package azas.global.health;
 
 import java.util.Map;
 import org.springframework.http.ResponseEntity;

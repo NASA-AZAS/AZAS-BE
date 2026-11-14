@@ -64,11 +64,11 @@ run_deploy() {
 }
 run_deploy "$good_image"
 
-# Installing the first-Spring deployment tools must leave the current API running.
+# Updating the deployment tools must leave the current API running.
 api_before="$(sudo "${compose[@]}" ps --quiet api)"
 sudo bash "$repo_root/scripts/install-deploy-tools.sh"
 [[ "$(sudo "${compose[@]}" ps --quiet api)" == "$api_before" ]]
-[[ "$(sudo find /opt/azas -maxdepth 1 -type d -name 'before-spring.*' | wc -l)" -eq 1 ]]
+[[ "$(sudo find /opt/azas -maxdepth 1 -type d -name 'deploy-tools-backup.*' | wc -l)" -eq 1 ]]
 docker build --tag "$bad_image" "$test_dir"
 
 # Capture the real helper's failure without disabling errexit inside the helper.

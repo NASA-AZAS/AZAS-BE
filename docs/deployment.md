@@ -69,11 +69,12 @@ Nginx·Certbot 전환과 최초 적용 절차는 [HTTPS 가이드](https.md)를 
 이전 이미지로 돌아가려면 AWS 권한이 있는 관리자가 `azas-api-deploy` 문서에 이전 SHA 이미지 URI를
 넣어 실행할 수 있습니다. GitHub의 재실행은 같은 SHA 이미지가 이미 있으면 이를 재사용합니다.
 
-## 첫 Spring 배포 전 서버 도구 갱신
+## 서버 배포 도구 갱신
 
-기존 EC2 배포 도구는 Python으로 헬스 체크하므로 첫 Spring 이미지 배포 전에 교체합니다.
-리뷰·CI를 통과한 전환 PR의 커밋을 EC2에 복사하고 그 체크아웃에서 실행합니다.
-main 병합은 자동 배포를 시작하므로 이 작업을 먼저 완료해야 합니다.
+EC2 배포 도구는 이미지의 Docker HEALTHCHECK를 사용합니다.
+배포 스크립트나 Compose 설정을 변경했다면 리뷰·CI를 통과한 PR 커밋을 EC2에 복사하고
+그 체크아웃에서 설치 도구를 실행합니다. 앱 이미지 배포만으로 서버의 설치 파일은 바뀌지 않습니다.
+main 병합이 자동 배포를 시작하므로 필요한 서버 도구 갱신을 먼저 완료합니다.
 
 ```bash
 sudo bash scripts/install-deploy-tools.sh
@@ -81,14 +82,14 @@ sudo bash scripts/install-deploy-tools.sh
 
 설치 도구는 Compose 설정과 셸 문법을 검사하고 배포와 동일한 lock을 사용합니다.
 `/usr/local/sbin/azas-deploy`, `/opt/azas/deploy-compose.sh`, `/opt/azas/compose.yaml`을
-`/opt/azas/before-spring.*`에 백업하고 교체합니다. 실행 중인 컨테이너를 재시작하지 않으며
+`/opt/azas/deploy-tools-backup.*`에 백업하고 교체합니다. 실행 중인 컨테이너를 재시작하지 않으며
 app.env, compose.env, 인증서 볼륨과 갱신 타이머를 변경하지 않습니다.
 
-갱신된 도구는 이미지의 Docker HEALTHCHECK를 확인하므로 기존 이미지로도 복구할 수 있습니다.
+도구는 컨테이너 내부의 프로그래밍 언어와 관계없이 Docker HEALTHCHECK 상태를 확인합니다.
 후보 컨테이너는 최대 150초, Compose 교체와 복구는 각각 최대 180초 기다립니다.
 Java는 이미지에 포함되므로 EC2 호스트에 JDK를 설치하지 않습니다.
 
-현재 설정 파일과 실행 상태를 확인한 뒤 main에 병합합니다. 첫 배포 후 다음을 확인합니다.
+현재 설정 파일과 실행 상태를 확인한 뒤 main에 병합합니다. 배포 후 다음을 확인합니다.
 
 ```bash
 sudo docker compose --project-name azas --env-file /etc/azas/compose.env --file /opt/azas/compose.yaml ps
@@ -99,6 +100,6 @@ sudo docker stats --no-stream
 ```
 
 `/health` 응답은 유지합니다. `/docs`는 Swagger UI로 리다이렉트하며 OpenAPI 내용은 SpringDoc으로
-생성됩니다. CORS 차단 preflight는 이전 400 대신 403을 반환합니다. `AZAS_CORS_ORIGINS`의
+생성됩니다. CORS 차단 preflight는 403을 반환합니다. `AZAS_CORS_ORIGINS`의
 JSON 배열 형식과 기본 차단 정책은 유지합니다. `.env`는 Docker의 `--env-file`로 주입하며
 로컬 `bootRun`에서는 셸/IDE 환경변수를 사용합니다.
