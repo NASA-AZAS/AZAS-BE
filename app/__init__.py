@@ -1,0 +1,1 @@
+"""AZAS backend application."""
