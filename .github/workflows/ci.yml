@@ -76,6 +76,9 @@ jobs:
       - name: Test Compose HTTPS and proxy behavior
         run: bash scripts/test-nginx.sh
 
+      - name: Test failed Compose deployment rollback
+        run: bash scripts/test-compose-rollback.sh
+
       - name: Authenticate to AWS for main deployment
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0

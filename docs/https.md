@@ -23,6 +23,10 @@ TLS 검증을 끄지 않고 `--cacert`·`--resolve`로 HTTPS, HTTP 308, ACME 경
 API 재생성, 재기동 후 인증서 유지를 확인합니다. Certbot은 `--version`만 실행하므로
 CI에서 공인 인증서나 ACME 계정을 만들지 않습니다. 실제 인증서 발급·갱신은 운영 적용 후 별도 확인합니다.
 
+`scripts/test-compose-rollback.sh`는 GitHub-hosted Linux runner에서만 실행합니다.
+AWS/ECR 전송만 로컬 fixture로 대체하고 실제 배포 도구·Docker·Compose를 실행합니다.
+사전 검사 통과 후 Compose 환경에서 실패하는 이미지를 주입해 이전 서비스와 저장된 태그 복구를 검사합니다.
+
 ## 최초 적용 (PR 검토·병합 후)
 
 아래는 EC2 관리자 절차입니다. **병합된 커밋**의 `deploy/`·`scripts/`를
