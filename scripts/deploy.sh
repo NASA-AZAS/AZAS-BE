@@ -51,15 +51,16 @@ trap on_failure ERR
 
 wait_for_health() {
   local name="$1"
-  for ((attempt = 0; attempt < 45; attempt++)); do
+  local health
+  for ((attempt = 0; attempt < 150; attempt++)); do
     if [[ "$(docker inspect --format '{{.State.Running}}' "$name")" != true ]]; then
       return 1
     fi
-    if docker exec "$name" python -c \
-      'import json, urllib.request; r = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2); assert r.status == 200 and json.load(r) == {"status": "ok"}' \
-      >/dev/null 2>&1; then
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$name")"
+    if [[ "$health" == healthy ]]; then
       return 0
     fi
+    [[ "$health" != unhealthy && "$health" != missing ]] || return 1
     sleep 1
   done
   return 1

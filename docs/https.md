@@ -1,6 +1,6 @@
 # Compose 기반 api.azas.n-e.kr HTTPS
 
-DNS A 레코드는 Elastic IP `3.37.142.87`로 연결되어 있습니다. FastAPI·Nginx는
+DNS A 레코드는 Elastic IP `3.37.142.87`로 연결되어 있습니다. Spring Boot API·Nginx는
 `deploy/compose.yaml`의 상시 서비스이며, Certbot은 `tools` profile에서 발급·갱신 때만 실행합니다.
 호스트에는 Nginx·Certbot을 설치하지 않습니다. 기존 ECR·SSM·단일 EC2를 유지합니다.
 ALB·ACM은 추가 로드밸런서 비용과 관리 범위 때문에 도입하지 않습니다.
@@ -76,7 +76,7 @@ dc run --rm --no-deps certbot certonly --webroot -w /var/www/letsencrypt \
   --cert-name api.azas.n-e.kr -d api.azas.n-e.kr \
   --email "$CERTBOT_EMAIL" --agree-tos --non-interactive
 sudo sed -i 's@^AZAS_NGINX_CONFIG=.*@AZAS_NGINX_CONFIG=./nginx/azas-https.conf@' /etc/azas/compose.env
-dc up --detach --wait --wait-timeout 90 api nginx
+dc up --detach --wait --wait-timeout 180 api nginx
 dc exec -T nginx nginx -t
 ```
 

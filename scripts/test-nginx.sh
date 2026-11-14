@@ -36,7 +36,7 @@ docker run --rm --entrypoint sh \
     cp /fixtures/fullchain.pem /fixtures/privkey.pem /certs/live/api.azas.n-e.kr/
     printf challenge-ok > /webroot/.well-known/acme-challenge/ci-token
   '
-"${compose[@]}" up --detach --wait --wait-timeout 90 api nginx
+"${compose[@]}" up --detach --wait --wait-timeout 180 api nginx
 "${compose[@]}" exec -T nginx nginx -t
 
 check_https() {
@@ -72,11 +72,22 @@ grep -Eq '^HTTP/[0-9.]+ 307' "$test_dir/https.headers"
 grep -Eiq '^location: https://api[.]azas[.]n-e[.]kr/health' "$test_dir/https.headers"
 curl --noproxy '*' --fail --silent --show-error --max-time 3 \
   --cacert "$test_dir/certs/fullchain.pem" \
-  --resolve api.azas.n-e.kr:443:127.0.0.1 https://api.azas.n-e.kr/docs >/dev/null
+  --resolve api.azas.n-e.kr:443:127.0.0.1 --location https://api.azas.n-e.kr/docs >/dev/null
 
-"${compose[@]}" up --detach --wait --wait-timeout 90 --force-recreate api
+curl --noproxy '*' --fail --silent --show-error --max-time 10 \
+  --cacert "$test_dir/certs/fullchain.pem" \
+  --resolve api.azas.n-e.kr:443:127.0.0.1 \
+  --header 'X-Forwarded-Proto: http' \
+  https://api.azas.n-e.kr/openapi.json | python3 -c '
+import json, sys
+schema = json.load(sys.stdin)
+assert "/health" in schema["paths"]
+assert schema["servers"][0]["url"] == "https://api.azas.n-e.kr"
+'
+
+"${compose[@]}" up --detach --wait --wait-timeout 180 --force-recreate api
 check_https
 "${compose[@]}" down
-"${compose[@]}" up --detach --wait --wait-timeout 90 api nginx
+"${compose[@]}" up --detach --wait --wait-timeout 180 api nginx
 check_https
 printf 'Compose TLS, redirects, ACME, headers, API recreation and certificate persistence passed\n'

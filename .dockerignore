@@ -11,3 +11,8 @@ __pycache__
 *.pem
 *.key
 tests
+.gradle
+build
+.idea
+.vscode
+HELP.md
