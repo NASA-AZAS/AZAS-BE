@@ -65,7 +65,7 @@ docker run --rm -p 8000:8000 --env-file .env azas-api
 컨테이너는 비루트 사용자로 실행하며 개발 의존성과 `.env`를 포함하지 않습니다.
 운영 환경에서는 `--reload`를 사용하지 않습니다.
 
-## CI
+## CI/CD
 
 GitHub Actions의 [CI 워크플로](.github/workflows/ci.yml)는 `main` 푸시와 모든 PR에서
 아래 검사를 실행합니다. Actions 화면에서 수동 실행도 가능합니다.
@@ -75,11 +75,16 @@ GitHub Actions의 [CI 워크플로](.github/workflows/ci.yml)는 `main` 푸시�
 - pytest 테스트 (경고도 실패로 처리)
 - 운영용 Docker 이미지 빌드 및 컨테이너 `/health` 응답 검사
 
-CI에는 AWS 자격증명이나 별도 Secrets가 필요하지 않습니다.
-EC2 자동 배포는 추후 별도 워크플로로 연결합니다.
+`main`은 검사 통과 후 이미지를 ECR에 업로드하고 SSM으로 EC2에 자동 배포합니다.
+PR은 검사만 실행합니다. GitHub OIDC로 인증하며 AWS 액세스 키나 SSH 키를 저장하지 않습니다.
+배포 구성·권한·복구 방법은 [배포 가이드](docs/deployment.md)를 참고하세요.
+
+- 실행 상태: https://github.com/NASA-AZAS/AZAS-BE/actions
+- 배포 API 문서: http://54.180.147.18/docs
+- 배포 헬스체크: http://54.180.147.18/health
 
 ## 다음 단계
 
 1. 착륙지·날짜 입력 및 Horizons 연동 API 구현
 2. 저장이 필요한 데이터가 정해지면 DB와 마이그레이션 도입
-3. EC2 배포 파이프라인 연결
+3. 도메인 및 HTTPS 연결
