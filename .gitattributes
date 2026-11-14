@@ -1,4 +1,5 @@
 *.sh text eol=lf
+/scripts/ci/*.py text eol=lf
 /docker/postgres.env text eol=lf
 *.crt text eol=lf
 /gradlew text eol=lf

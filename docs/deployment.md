@@ -5,7 +5,7 @@
 
 ## 자동 배포 흐름
 
-`main` 푸시 → Java/PostgreSQL 테스트 → Docker 빌드·검증 → ECR SHA 이미지 업로드 → OIDC/SSM → EC2 배포.
+`main` 푸시 → 변경 분류·문서 검사 → 앱 변경이 있으면 Java/PostgreSQL 테스트 → Docker 빌드·검증 → ECR SHA 이미지 업로드 → OIDC/SSM → EC2 배포.
 PR에서는 검사만 수행하고 `workflow_dispatch`의 main 실행으로 수동 재배포할 수 있습니다.
 기존 workflow job 이름과 OIDC·ECR·제한된 SSM 호출 방식은 유지합니다.
 
@@ -13,6 +13,55 @@ SSM 문서 `azas-api-deploy`는 이미지 URI 하나를 받아 EC2의 `/usr/loca
 서버 도구가 Secret을 조회해 후보 환경 파일을 만들고 이미지의 Docker HEALTHCHECK로 후보 앱을 검사합니다.
 검사 성공 후 운영 Compose를 전환하며 전환 실패 시 기존 이미지와 환경 파일을 복구합니다.
 GitHub에 DB 비밀번호나 SSH 키를 추가하지 않습니다.
+
+### 문서 변경과 앱 변경 구분
+
+워크플로는 모든 PR과 main 푸시에서 시작합니다. 먼저 `Documentation and CI policy` job이
+문서의 내부 파일·제목 링크와 코드 블록, CI 분기 회귀 테스트를 검사하고 실행할 작업을 결정합니다.
+외부 URL에 HTTP 요청을 보내는 검사는 포함하지 않습니다.
+
+| 변경·실행 유형 | 앱 검사·Docker 빌드 | ECR 업로드·EC2 배포 |
+| --- | --- | --- |
+| `README.md`, `docs/` 아래 `.md` 파일만 변경한 PR | 생략 | 실행하지 않음 |
+| 코드·설정·기타 파일이 포함된 PR | 실행 | 실행하지 않음 |
+| 배포 성공 커밋 이후 문서만 변경된 main | 생략 | 생략 |
+| 배포되지 않은 앱 변경이 있는 main | 실행 | 검사 성공 후 실행 |
+| main에서 수동 실행 | 변경 파일과 관계없이 전체 실행 | 검사 성공 후 실행 |
+| main 이외 브랜치에서 수동 실행 | 변경 파일과 관계없이 전체 실행 | 실행하지 않음 |
+
+문서 생략 대상은 위 경로로 한정합니다. `build.gradle`, 워크플로, SQL, `scripts/`,
+문서가 아닌 `docs/` 파일과 알 수 없는 경로는 모두 앱 검사 대상으로 취급합니다.
+rename은 이전·새 경로를 모두 확인합니다. 삭제도 변경 파일에 포함합니다.
+
+PR은 base와 head의 merge-base 이후 변경을 비교합니다. main은 직전 푸시가 아니라
+**`Deploy to EC2` job이 성공한 커밋**과 비교합니다. 문서 전용 실행의 성공은 배포 기록으로
+사용하지 않으므로, 앞선 코드 배포가 실패하거나 대기 실행이 교체되어도 변경을 빠뜨리지 않습니다.
+
+배포 기준은 GitHub Actions의 최근 완료된 main 실행 20개에서 조회하며, 재실행도 배포 job의
+완료 시각으로 비교합니다. 기준이 없거나 조회·Git 비교를 할 수 없으면 전체 앱 검사를 실행합니다.
+main의 현재 SHA를 확인할 수 없으면 분류를 실패시켜 배포를 차단합니다.
+조회에는 `actions: read` 권한만 사용하고 AWS 인증·EC2 접속은 하지 않습니다.
+
+main 실행은 진행 중인 실행을 자동 취소하지 않습니다. PR의 이전 실행은 기존처럼 취소합니다.
+GitHub의 대기 실행 순서는 보장되지 않으므로 이미 최신 main에 뒤처진 push 실행은 배포를 생략합니다.
+Actions의 **Re-run jobs**도 원래 이벤트를 따릅니다. 문서만 바뀐 main을 강제로 재배포하려면
+**Run workflow → main**을 사용하세요.
+
+문서 전용 실행에서도 기존 `Java build and test` 검사 결과는 남습니다. 이 경우 Java를 설치하지 않고
+분류·문서 검사 통과 여부만 확인합니다. `Docker build and smoke test`와 배포 job은 생략됩니다.
+분류나 문서 검사에 실패하면 `Java build and test`도 실패하므로 조용히 통과하지 않습니다.
+
+### CI 정책 로컬 검증
+
+Python 3.10 이상과 Git으로 실행할 수 있으며 별도 Python 의존성은 없습니다.
+
+```powershell
+python -m unittest discover -s scripts/ci -v
+python scripts/ci/check_docs.py
+```
+
+회귀 테스트는 임시 Git 저장소와 모의 API 응답을 사용합니다. 운영 배포나 AWS 호출은 하지 않습니다.
+Actions 실행 요약의 **CI plan**에서 전체 앱 검사 여부와 판별 이유를 확인할 수 있습니다.
 
 ## GitHub Actions 변수
 

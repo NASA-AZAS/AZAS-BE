@@ -1,4 +1,5 @@
 .cache/
+/scripts/ci/__pycache__/
 .env
 .env.*
 !.env.example

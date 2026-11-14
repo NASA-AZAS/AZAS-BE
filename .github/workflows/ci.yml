@@ -11,34 +11,80 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A docs push must not cancel an in-progress main deployment.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  plan:
+    name: Documentation and CI policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      app: ${{ steps.plan.outputs.app }}
+    steps:
+      - name: Check out repository and comparison history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Test CI policy
+        run: python3 -m unittest discover -s scripts/ci -v
+
+      - name: Check documentation links and code fences
+        run: python3 scripts/ci/check_docs.py
+
+      - name: Choose app CI
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/plan.py
+
   checks:
     name: Java build and test
+    needs: plan
+    # Preserve the existing required check and fail if planning/docs checks fail.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - name: Require successful CI plan and documentation checks
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+        run: test "$PLAN_RESULT" = success
+
+      - name: Documentation-only run
+        if: needs.plan.outputs.app != 'true'
+        run: echo 'No app checks needed; documentation and CI policy checks passed.'
+
       - name: Check out repository
+        if: needs.plan.outputs.app == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Java 21
+        if: needs.plan.outputs.app == 'true'
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Gradle and validate wrapper
+        if: needs.plan.outputs.app == 'true'
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Build and test with locked dependencies
+        if: needs.plan.outputs.app == 'true'
         run: ./gradlew --no-daemon clean check bootJar
 
       - name: Check local run script syntax
+        if: needs.plan.outputs.app == 'true'
         shell: pwsh
         run: |
           $tokens = $null
@@ -49,7 +95,8 @@ jobs:
 
   docker:
     name: Docker build and smoke test
-    needs: checks
+    needs: [plan, checks]
+    if: needs.plan.outputs.app == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -213,8 +260,8 @@ jobs:
 
   deploy:
     name: Deploy to EC2
-    needs: [checks, docker]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [plan, checks, docker]
+    if: needs.plan.outputs.app == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     concurrency:

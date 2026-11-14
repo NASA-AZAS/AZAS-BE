@@ -97,7 +97,9 @@ JVM 힙 기본값은 128MB, 컨테이너 메모리 제한은 384MB이며 healthc
 [GitHub Actions](https://github.com/NASA-AZAS/AZAS-BE/actions)는 Java·PostgreSQL 통합 테스트,
 로컬 Compose, 앱 이미지의 readiness·스키마·실행 권한·DB 장애/복구를 검사합니다.
 요청 ID와 텍스트·JSON 요청 로그, 공개 CA 파일도 실제 이미지에서 검증합니다.
-main에서만 검증한 이미지를 SHA 태그로 ECR에 올리고 OIDC·제한된 SSM 문서로 EC2에 전달합니다.
+앱 변경이 있는 main에서 검증한 이미지를 SHA 태그로 ECR에 올리고 OIDC·제한된 SSM 문서로 EC2에 전달합니다.
+`README.md`와 `docs/`의 Markdown만 변경되고 미배포 앱 변경이 없으면 문서 검사만 수행합니다.
+main에서 수동 실행하면 기존처럼 전체 검사와 배포를 수행합니다.
 
 로컬 Compose는 이 레포에서, 운영 Compose·Nginx·Certbot·배포 도구는 EC2에서 관리합니다.
 서버 관리 자료는 EC2의 `/opt/azas/management/README.md`에 있습니다.
