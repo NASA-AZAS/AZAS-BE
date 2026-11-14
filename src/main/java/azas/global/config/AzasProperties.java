@@ -1,4 +1,4 @@
-package azas.config;
+package azas.global.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

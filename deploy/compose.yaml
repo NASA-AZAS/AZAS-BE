@@ -8,8 +8,6 @@ services:
     environment:
       # Only Nginx joins this backend network; api has no published host port.
       SERVER_FORWARD_HEADERS_STRATEGY: framework
-      # Preserve proxy handling when rolling back to the previous FastAPI image.
-      FORWARDED_ALLOW_IPS: '*'
     networks: [backend]
     mem_limit: 384m
     cpus: 1

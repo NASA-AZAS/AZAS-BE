@@ -1,16 +1,10 @@
 .git
-.venv
-.tools
 .cache
-__pycache__
-*.py[cod]
-.pytest_cache
-.ruff_cache
 .env
 .env.*
 *.pem
 *.key
-tests
+src/test
 .gradle
 build
 .idea

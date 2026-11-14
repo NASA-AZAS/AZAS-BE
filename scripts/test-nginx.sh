@@ -19,8 +19,7 @@ cleanup() {
 trap cleanup EXIT
 
 "${compose[@]}" config --quiet
-nginx_image="$("${compose[@]}" config --format json | python3 -c \
-  'import json, sys; print(json.load(sys.stdin)["services"]["nginx"]["image"])')"
+nginx_image="$("${compose[@]}" config --format json | jq --exit-status --raw-output '.services.nginx.image')"
 mkdir -p "$test_dir/certs"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -keyout "$test_dir/certs/privkey.pem" -out "$test_dir/certs/fullchain.pem" \
@@ -50,7 +49,7 @@ check_https() {
 check_https
 api_id="$("${compose[@]}" ps --quiet api)"
 docker inspect --format '{{json .HostConfig.PortBindings}}' "$api_id" | \
-  python3 -c 'import json, sys; assert json.load(sys.stdin) in ({}, None)'
+  jq --exit-status '. == {} or . == null' >/dev/null
 [[ "$("${compose[@]}" ps --all --quiet certbot)" == '' ]]
 
 challenge="$(curl --noproxy '*' --fail --silent --show-error --max-time 3 \
@@ -78,12 +77,8 @@ curl --noproxy '*' --fail --silent --show-error --max-time 10 \
   --cacert "$test_dir/certs/fullchain.pem" \
   --resolve api.azas.n-e.kr:443:127.0.0.1 \
   --header 'X-Forwarded-Proto: http' \
-  https://api.azas.n-e.kr/openapi.json | python3 -c '
-import json, sys
-schema = json.load(sys.stdin)
-assert "/health" in schema["paths"]
-assert schema["servers"][0]["url"] == "https://api.azas.n-e.kr"
-'
+  https://api.azas.n-e.kr/openapi.json | \
+  jq --exit-status '.paths["/health"] != null and .servers[0].url == "https://api.azas.n-e.kr"' >/dev/null
 
 "${compose[@]}" up --detach --wait --wait-timeout 180 --force-recreate api
 check_https

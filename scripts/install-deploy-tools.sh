@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Install from a reviewed checkout before the first Spring image reaches main.
+# Install changed server deployment files from a reviewed checkout.
 [[ "$EUID" -eq 0 ]] || { echo 'Run with sudo' >&2; exit 1; }
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 [[ -f /etc/azas/compose.env && -f /etc/azas/registry.env ]]
@@ -13,7 +13,7 @@ docker compose --project-name azas --env-file /etc/azas/compose.env \
 
 exec 9>/var/lock/azas-deploy.lock
 flock -w 300 9
-backup_dir="$(mktemp -d /opt/azas/before-spring.XXXXXX)"
+backup_dir="$(mktemp -d /opt/azas/deploy-tools-backup.XXXXXX)"
 cp -p /usr/local/sbin/azas-deploy "$backup_dir/azas-deploy"
 cp -p /opt/azas/deploy-compose.sh "$backup_dir/deploy-compose.sh"
 cp -p /opt/azas/compose.yaml "$backup_dir/compose.yaml"
