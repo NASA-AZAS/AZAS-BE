@@ -70,6 +70,7 @@ scripts/run-local.ps1   # 로컬 DB 시작과 환경변수 주입
 기능 코드는 `azas.domain.<기능명>` 아래에 추가합니다.
 공통 응답·예외 처리 사용법은 [API 개발 규칙](docs/api-conventions.md),
 JPA·Flyway 사용법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
+요청 ID와 텍스트/JSON 로그 설정은 [로깅 가이드](docs/logging.md)에 정리되어 있습니다.
 앱 설정은 `application.yaml`, `AZAS_`와 `SPRING_DATASOURCE_` 환경변수를 사용합니다.
 `AZAS_CORS_ORIGINS`는 JSON 배열이며 기본값은 빈 목록입니다.
 
@@ -93,6 +94,7 @@ JVM 힙 기본값은 128MB, 컨테이너 메모리 제한은 384MB이며 healthc
 
 [GitHub Actions](https://github.com/NASA-AZAS/AZAS-BE/actions)는 Java·PostgreSQL 통합 테스트,
 로컬 Compose, 앱 이미지의 readiness·스키마·실행 권한·DB 장애/복구를 검사합니다.
+요청 ID와 텍스트·JSON 요청 로그, 공개 CA 파일도 실제 이미지에서 검증합니다.
 main에서만 검증한 이미지를 SHA 태그로 ECR에 올리고 OIDC·제한된 SSM 문서로 EC2에 전달합니다.
 
 로컬 Compose는 이 레포에서, 운영 Compose·Nginx·Certbot·배포 도구는 EC2에서 관리합니다.

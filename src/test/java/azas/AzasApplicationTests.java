@@ -27,6 +27,7 @@ class AzasApplicationTests extends PostgresIntegrationTest {
     void healthRemainsCompatible() throws Exception {
         mvc.perform(get("/health"))
                 .andExpect(status().isOk())
+                .andExpect(header().exists("X-Request-ID"))
                 .andExpect(jsonPath("$.status").value("ok"));
     }
 
@@ -63,6 +64,14 @@ class AzasApplicationTests extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.info.title").value("Test AZAS API"))
                 .andExpect(jsonPath("$.paths['/health']").exists());
+    }
+
+    @Test
+    void frontendCanReadTheServerGeneratedRequestId() throws Exception {
+        mvc.perform(get("/health").header("Origin", "https://frontend.example"))
+                .andExpect(status().isOk())
+                .andExpect(header().exists("X-Request-ID"))
+                .andExpect(header().string("Access-Control-Expose-Headers", "X-Request-ID"));
     }
 
     @Test

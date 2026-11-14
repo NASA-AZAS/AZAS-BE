@@ -1,5 +1,6 @@
 package azas.global;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
@@ -16,6 +17,9 @@ import azas.global.exception.BusinessException;
 import azas.global.exception.ErrorCode;
 import azas.global.response.ApiResponse;
 import azas.support.PostgresIntegrationTest;
+import azas.support.LogCapture;
+import azas.global.exception.GlobalExceptionHandler;
+import azas.global.logging.RequestLoggingFilter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -51,6 +55,22 @@ class ApiExceptionHandlingTests extends PostgresIntegrationTest {
 
     @Autowired
     MockMvc mvc;
+
+    @Test
+    void exceptionAndSummaryShareTheResponseRequestIdWithOneStackTrace() throws Exception {
+        try (var logs = new LogCapture(GlobalExceptionHandler.class, RequestLoggingFilter.class)) {
+            var result = mvc.perform(get("/api/v1/test/unexpected"))
+                    .andExpect(status().isInternalServerError()).andReturn();
+            String requestId = result.getResponse().getHeader("X-Request-ID");
+            assertThat(requestId).isNotBlank();
+            assertThat(logs.events()).hasSize(2)
+                    .allSatisfy(event -> assertThat(event.getMDCPropertyMap())
+                            .containsEntry("requestId", requestId));
+            assertThat(logs.events().stream()
+                    .filter(event -> event.getThrowableProxy() != null).count()).isEqualTo(1);
+            assertThat(org.slf4j.MDC.get("requestId")).isNull();
+        }
+    }
 
     @Test
     void successfulResponsesHaveAStableEnvelope() throws Exception {

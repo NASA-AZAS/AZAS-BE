@@ -109,6 +109,26 @@ jobs:
             "$(sha256sum docker/certs/rds-ca-bundle.crt | cut -d ' ' -f 1)"
           docker stats --no-stream azas-api-ci
 
+      - name: Check text request logging
+        run: |
+          curl --fail --silent --show-error --max-time 15 --dump-header /tmp/text-request.headers \
+            --output /tmp/text-request.json --header 'Authorization: Bearer ci-text-private-marker' \
+            'http://127.0.0.1:8000/openapi.json?token=ci-text-private-marker'
+          request_id=$(awk 'tolower($1)=="x-request-id:" {gsub("\r", "", $2); print $2}' /tmp/text-request.headers)
+          [[ "$request_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
+          for attempt in $(seq 1 10); do
+            output=$(docker logs azas-api-ci 2>&1)
+            [[ "$output" != *ci-text-private-marker* ]]
+            if line=$(grep -F "$request_id" <<< "$output" | grep -F 'HTTP request completed'); then
+              test "$(wc -l <<< "$line")" = 1
+              grep -Eq 'status="?200"?' <<< "$line"
+              grep -Fq '/openapi.json' <<< "$line"
+              break
+            fi
+            sleep 1
+          done
+          test -n "${line:-}"
+
       - name: Check database-aware readiness and recovery
         run: |
           docker stop azas-postgres-ci
@@ -118,6 +138,37 @@ jobs:
           docker start azas-postgres-ci
           curl --fail --silent --show-error --max-time 10 --retry 20 --retry-delay 1 --retry-all-errors \
             http://127.0.0.1:8000/actuator/health/readiness | jq --exit-status '.status == "UP"'
+
+      - name: Check JSON request logging
+        run: |
+          docker run --detach --name azas-api-json-ci --memory 384m --cpus 1 \
+            --cap-drop ALL --security-opt no-new-privileges --network azas-smoke \
+            --env 'SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/azas?sslmode=disable' \
+            --env SPRING_DATASOURCE_USERNAME=azas_test --env SPRING_DATASOURCE_PASSWORD=test_only_password \
+            --env AZAS_LOG_FORMAT=logstash --publish 127.0.0.1:8001:8000 azas-api:ci
+          curl --fail --silent --show-error --retry 60 --retry-delay 2 --retry-all-errors \
+            --retry-max-time 150 --max-time 3 http://127.0.0.1:8001/actuator/health/readiness
+          curl --fail --silent --show-error --max-time 15 --dump-header /tmp/json-request.headers \
+            --output /tmp/json-request.json 'http://127.0.0.1:8001/openapi.json?token=ci-json-private-marker'
+          request_id=$(awk 'tolower($1)=="x-request-id:" {gsub("\r", "", $2); print $2}' /tmp/json-request.headers)
+          [[ "$request_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
+          verified=false
+          for attempt in $(seq 1 10); do
+            output=$(docker logs azas-api-json-ci 2>&1)
+            [[ "$output" != *ci-json-private-marker* ]]
+            if jq --raw-input --slurp --exit-status --arg id "$request_id" '
+              [split("\n")[] | fromjson? |
+                select(.message == "HTTP request completed" and .requestId == $id)] as $requests |
+              ($requests | length) == 1 and $requests[0].method == "GET" and
+              $requests[0].path == "/openapi.json" and $requests[0].status == 200 and
+              ($requests[0].durationMs | type == "number")' <<< "$output"; then
+              verified=true
+              break
+            fi
+            sleep 1
+          done
+          [[ "$verified" == true ]]
+          test "$(docker inspect --format '{{.State.OOMKilled}}' azas-api-json-ci)" = false
 
       - name: Authenticate to AWS for main deployment
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -151,6 +202,10 @@ jobs:
           if docker container inspect azas-api-ci > /dev/null 2>&1; then
             docker logs azas-api-ci
             docker rm --force azas-api-ci
+          fi
+          if docker container inspect azas-api-json-ci > /dev/null 2>&1; then
+            docker logs azas-api-json-ci
+            docker rm --force azas-api-json-ci
           fi
           docker rm --force azas-postgres-ci 2>/dev/null || true
           docker network rm azas-smoke 2>/dev/null || true
