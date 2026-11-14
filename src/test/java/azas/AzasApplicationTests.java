@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
+import azas.support.PostgresIntegrationTest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -17,7 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
         "azas.app-name=Test AZAS API"
 })
 @AutoConfigureMockMvc
-class AzasApplicationTests {
+class AzasApplicationTests extends PostgresIntegrationTest {
 
     @Autowired
     MockMvc mvc;
@@ -72,5 +73,8 @@ class AzasApplicationTests {
                 .andExpect(jsonPath("$.components").doesNotExist());
         mvc.perform(get("/actuator/env"))
                 .andExpect(status().isNotFound());
+        mvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
     }
 }

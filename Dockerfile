@@ -19,9 +19,10 @@ ENV AZAS_ENVIRONMENT=production \
 
 WORKDIR /app
 COPY --from=builder --chown=10001:10001 /workspace/build/libs/azas-api.jar /app/azas-api.jar
+COPY --chown=10001:10001 deploy/certs/rds-ca-bundle.crt /app/certs/rds-ca-bundle.crt
 USER 10001:10001
 
 EXPOSE 8000
 HEALTHCHECK --interval=5s --timeout=3s --start-period=60s --retries=12 \
-    CMD ["curl", "--fail", "--silent", "--show-error", "--max-time", "2", "http://127.0.0.1:8000/health"]
+    CMD ["curl", "--fail", "--silent", "--show-error", "--max-time", "2", "http://127.0.0.1:8000/actuator/health/readiness"]
 ENTRYPOINT ["java", "-jar", "/app/azas-api.jar"]

@@ -4,7 +4,9 @@ services:
   api:
     image: ${AZAS_API_IMAGE:?Set the SHA-tagged ECR image URI}
     restart: unless-stopped
-    env_file: ${AZAS_APP_ENV_FILE:-/etc/azas/app.env}
+    env_file:
+      - path: ${AZAS_APP_ENV_FILE:-/etc/azas/app.env}
+        format: raw
     environment:
       # Only Nginx joins this backend network; api has no published host port.
       SERVER_FORWARD_HEADERS_STRATEGY: framework

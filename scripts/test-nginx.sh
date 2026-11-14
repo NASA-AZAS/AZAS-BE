@@ -8,17 +8,19 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 export AZAS_API_IMAGE="azas-api:ci"
 export AZAS_APP_ENV_FILE="$test_dir/app.env"
 export AZAS_NGINX_CONFIG="./nginx/azas-https.conf"
-printf 'AZAS_ENVIRONMENT=test\n' > "$AZAS_APP_ENV_FILE"
+printf 'AZAS_ENVIRONMENT=test\nSPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/azas?sslmode=disable\nSPRING_DATASOURCE_USERNAME=azas_test\nSPRING_DATASOURCE_PASSWORD=test_only_password\n' > "$AZAS_APP_ENV_FILE"
 compose=(docker compose --project-name "$project" --file "$repo_root/deploy/compose.yaml")
 
 cleanup() {
   "${compose[@]}" logs --tail 20 api nginx 2>/dev/null || true
+  [[ -z "${db_container:-}" ]] || docker rm --force "$db_container" >/dev/null 2>&1 || true
   "${compose[@]}" --profile tools down --volumes --remove-orphans 2>/dev/null || true
   [[ "$test_dir" == /tmp/azas-nginx-test.* ]] && rm -rf -- "$test_dir"
 }
 trap cleanup EXIT
 
 "${compose[@]}" config --quiet
+source "$repo_root/scripts/test-postgres.sh"
 nginx_image="$("${compose[@]}" config --format json | jq --exit-status --raw-output '.services.nginx.image')"
 mkdir -p "$test_dir/certs"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
@@ -82,7 +84,10 @@ curl --noproxy '*' --fail --silent --show-error --max-time 10 \
 
 "${compose[@]}" up --detach --wait --wait-timeout 180 --force-recreate api
 check_https
+docker rm --force "$db_container" >/dev/null
+db_container=""
 "${compose[@]}" down
+source "$repo_root/scripts/test-postgres.sh"
 "${compose[@]}" up --detach --wait --wait-timeout 180 api nginx
 check_https
 printf 'Compose TLS, redirects, ACME, headers, API recreation and certificate persistence passed\n'
