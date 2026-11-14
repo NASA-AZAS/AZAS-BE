@@ -43,7 +43,6 @@ cat > "$test_dir/Dockerfile" <<'DOCKERFILE'
 FROM azas-api:ci
 CMD ["python", "-c", "import os, uvicorn; assert os.getenv('FORWARDED_ALLOW_IPS') != '*', 'intentional CI failure'; uvicorn.run('app.main:app', host='0.0.0.0', port=8000)"]
 DOCKERFILE
-docker build --tag "$bad_image" "$test_dir"
 
 sudo install -d -m 0755 /etc/azas /opt/azas/nginx
 sudo install -m 0644 "$repo_root/deploy/compose.yaml" /opt/azas/compose.yaml
@@ -60,11 +59,15 @@ run_deploy() {
     bash "$repo_root/scripts/deploy-compose.sh" "$1"
 }
 run_deploy "$good_image"
+docker build --tag "$bad_image" "$test_dir"
 
 # Capture the real helper's failure without disabling errexit inside the helper.
 status=0
-run_deploy "$bad_image" || status=$?
+run_deploy "$bad_image" > "$test_dir/deploy-failure.log" 2>&1 || status=$?
+cat "$test_dir/deploy-failure.log"
 [[ "$status" -ne 0 ]]
+grep -Fq 'intentional CI failure' "$test_dir/deploy-failure.log"
+grep -Fq "Restoring $good_image" "$test_dir/deploy-failure.log"
 api_id="$(sudo "${compose[@]}" ps --quiet api)"
 [[ "$(docker inspect --format '{{.Config.Image}}' "$api_id")" == "$good_image" ]]
 sudo grep -Fxq "AZAS_API_IMAGE=$good_image" /etc/azas/compose.env
