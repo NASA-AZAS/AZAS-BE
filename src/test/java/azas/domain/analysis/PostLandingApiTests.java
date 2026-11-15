@@ -38,6 +38,9 @@ class PostLandingApiTests extends PostgresIntegrationTest {
     void matchesEveryFieldOfTheSuppliedSite01Report() throws Exception {
         long site = site("Site01");
         loadOriginalObserverData(site);
+        var detail = data("/api/v1/landing-sites/{id}", site);
+        assertThat(detail.path("siteCode").asString()).isEqualTo("Site01");
+        assertThat(detail.path("landingSiteId").asLong()).isEqualTo(site);
         var request = new DateOpportunityRequest("2027-01-31", null);
         var run = store.createOpportunities(site, request, engine.identity());
         assertThat(store.start(run)).isTrue();
@@ -49,6 +52,7 @@ class PostLandingApiTests extends PostgresIntegrationTest {
             var original = json.readTree(file);
             assertThat(actual.path("samples").size()).isEqualTo(289);
             assertThat(actual).isEqualTo(original);
+            assertThat(detail.path("meanDailyVisibility")).isEqualTo(original.path("meanDailyVisibility"));
         }
     }
 
@@ -83,7 +87,9 @@ class PostLandingApiTests extends PostgresIntegrationTest {
         assertThat(result.path("nextTerrainOccultationUtc").path("earth").isNull()).isTrue();
         assertThat(result.path("meanDailyVisibility").path("earthMeanDailyVisiblePct").asDouble()).isEqualTo(100);
         assertThat(result.path("meanDailyVisibility").path("sunMeanDailyVisiblePct").asDouble()).isZero();
+        assertThat(data("/api/v1/landing-sites/{id}", site).path("meanDailyVisibility")).isEqualTo(result.path("meanDailyVisibility"));
         jdbc.update("delete from observer_sample where landing_site_id=? and observed_at='2028-02-29T12:00Z'", site);
+        assertThat(data("/api/v1/landing-sites/{id}", site).path("meanDailyVisibility").isNull()).isTrue();
         mvc.perform(get(PATH, run, id)).andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("OBSERVER_DATA_INCOMPLETE"));
     }
