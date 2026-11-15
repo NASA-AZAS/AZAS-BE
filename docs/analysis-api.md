@@ -18,6 +18,10 @@ Swagger UI는 로컬 실행 후 `http://127.0.0.1:8000/docs`에서 확인합니�
 응답의 `landingSiteId`가 요청 경로의 PK입니다. `Site01` 등의 `siteCode`와 구분하세요.
 목록·상세에 좌표·지표 표고·관측 높이·지형 선별 상태·데이터 버전을 포함하며 지평선 3,600행은 전송하지 않습니다.
 
+상세 응답은 접지 분석을 실행하기 전에도 후보지 기본 관측 높이의 `meanDailyVisibility`를 제공합니다.
+착륙 후 응답과 같은 2027~2028년 UTC 731일 기준으로 `sunMeanDailyVisiblePct`와 `earthMeanDailyVisiblePct`를 계산합니다.
+기본 높이로 분석한 착륙 후 값과 일치하며, 관측 격자나 지평선 자료가 불완전하면 상세 응답의 이 필드는 `null`입니다.
+
 분석 POST 본문:
 
 ```json
