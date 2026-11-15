@@ -40,7 +40,7 @@ On first startup, the API creates the database tables. Load the data for the fea
 4. **Work back to launch.** For that first touchdown, compare schedules from Earth. Each available schedule starts with launch, followed by the burn that sends the spacecraft toward the Moon, lunar arrival, and touchdown.
 5. **Open a flight path.** Choose a launch option to calculate a preliminary trajectory using positions from NASA’s JPL Horizons service. You can reopen the saved path later without repeating the calculation.
 
-The API explorer lets you try each request. The detailed guide includes request examples and response fields. [Interactive API reference](https://api.azas.n-e.kr/docs) · [Analysis API guide (Korean)](docs/analysis-api.md)
+The API explorer lets you try each request. The detailed guide includes request examples and response fields. [Interactive API reference](https://api.azas.n-e.kr/docs) · [Analysis API guide](docs/analysis-api.md)
 
 ## Checks and limitations
 

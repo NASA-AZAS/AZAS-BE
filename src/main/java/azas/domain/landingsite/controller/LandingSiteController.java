@@ -18,17 +18,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/landing-sites")
 @RequiredArgsConstructor
-@Tag(name = "Landing sites", description = "착륙 후보지 조회")
+@Tag(name = "Landing sites", description = "Candidate landing sites near the lunar south pole")
 public class LandingSiteController {
     private final LandingSiteService service;
     @GetMapping
-    @Operation(summary = "후보지 목록 조회")
+    @Operation(summary = "List candidate landing sites")
     public ApiResponse<List<LandingSiteResponse>> list(@RequestParam(required = false) @Positive Long terrainDatasetId) {
         return ApiResponse.success(service.list(terrainDatasetId));
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "후보지 상세 조회")
+    @Operation(summary = "Get terrain and average visibility for a landing site")
     public ApiResponse<LandingSiteDetailResponse> get(@PathVariable @Positive long id) {
         return ApiResponse.success(service.get(id));
     }
