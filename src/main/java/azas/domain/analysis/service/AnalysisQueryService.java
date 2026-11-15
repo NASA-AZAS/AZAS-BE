@@ -30,6 +30,7 @@ public class AnalysisQueryService {
     private final DailyAnalysisResultRepository days;
     private final VisibilityWindowRepository windows;
     private final LandingOpportunityResultRepository opportunities;
+    private final CandidateHistoryStore history;
     public AnalysisResponses.Run get(UUID id) {
         return AnalysisResponses.Run.from(runs.findById(id)
                 .orElseThrow(() -> new BusinessException(AnalysisErrorCode.RUN_NOT_FOUND)));
@@ -61,7 +62,10 @@ public class AnalysisQueryService {
         for (var row : opportunities.findByAnalysisRunIdOrderByLandingWindowStartAt(id)) {
             Instant start = row.getLandingWindowStartAt(), end = row.getLandingWindowEndAt();
             Duration activity = Duration.between(row.getProposedLandingAt(), row.getSurfaceActivityFinishedAt());
-            intervals.add(new AnalysisResponses.TouchdownWindow(start, end, end.plus(activity), row.getSurfaceConditionStatus()));
+            String surfaceStatus = row.getSurfaceConditionStatus();
+            intervals.add(new AnalysisResponses.TouchdownWindow(start, end, end.plus(activity), surfaceStatus));
+            if (!"SATISFIED".equals(surfaceStatus)) continue;
+
             Instant time = start;
             while (candidates.size() < DateOpportunityEngine.MAX_CANDIDATES) {
                 String code = String.format(Locale.ROOT, "%s-%05d", id, candidates.size() + 1);
@@ -71,7 +75,9 @@ public class AnalysisQueryService {
                 time = next.isAfter(end) ? end : next;
             }
         }
-        return new AnalysisResponses.Opportunities(id, intervals.isEmpty() ? null : intervals.getFirst().startUtc(),
-                intervals, candidates);
+        boolean persisted = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters()).has("request");
+        return new AnalysisResponses.Opportunities(id, intervals.stream().filter(w -> w.surfaceStatus().equals("SATISFIED"))
+                .map(AnalysisResponses.TouchdownWindow::startUtc).min(Instant::compareTo).orElse(null),
+                intervals, persisted ? history.get(id) : candidates);
     }
 }

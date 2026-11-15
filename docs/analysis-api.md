@@ -86,7 +86,7 @@ POST는 HTTP 202와 상태 조회용 `Location` 헤더를 반환합니다.
 
 태양과 지구의 고도가 각각 해당 방위각의 지역 지평선보다 높을 때 공동 가시로 판정합니다. 접지 구간의 시작과 끝은 모두 포함되며 끝은 마지막 공동 가시 표본 시각에서 활동 시간을 뺀 값입니다. 일별 가시율은 다음 격자까지 직전 표본을 적용해 UTC 날짜별로 집계합니다. 마지막 날짜는 마감 시각까지만 집계합니다.
 
-`windows[].startUtc`와 `endUtc`는 접지 가능한 구간이고, `supportEndUtc`는 활동을 지지하는 마지막 표본 시각입니다. 만족 구간이 없으면 `earliestTouchdownUtc`는 null이고 두 배열은 비어 있습니다. 개별 후보가 50개를 넘으면 `TRUNCATED`로 기록하며 전체 접지 구간과 일별 결과는 조회할 수 있습니다. 후보의 `proposedLandingUtc`는 표면 조건으로 계산한 접지 시각입니다.
+`windows[]`에는 `UNKNOWN`을 포함한 모든 구간과 각각의 `surfaceStatus`가 들어갑니다. `startUtc`와 `endUtc`는 구간의 양 끝이고, `supportEndUtc`는 활동을 지지하는 마지막 표본 시각입니다. `earliestTouchdownUtc`와 `candidates`는 `SATISFIED` 구간에서만 산출합니다. 만족 구간이 없으면 최초 접지 시각은 null이고 후보 배열은 비어 있습니다. 개별 후보가 50개를 넘으면 `TRUNCATED`로 기록하며 전체 구간과 일별 결과는 조회할 수 있습니다. 후보의 `proposedLandingUtc`는 표면 조건으로 계산한 접지 시각입니다.
 
 동일 요청이라도 실행마다 엔진 해시, 지형 데이터셋 해시, 사용한 관측 표본 수와 표본 해시를 보관합니다. 실제 원본과 비교하려면 테스트 프로세스에 `LLSN_VER2_HOME`으로 원본 모듈 디렉터리를 지정합니다. `AnalysisApiTests`가 일회용 PostgreSQL의 Site01 관측값으로 2027년 1월 접지 구간·후보 시각·31일의 태양/지구 가시율을 오프라인 CLI 결과와 비교합니다.
 
@@ -178,3 +178,24 @@ $env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djavax.net.ssl.trustStoreType=
 | 접지 시각이 있고 발사장 데이터가 있음 | 200, 등록된 각 발사장 반환. 후보가 없는 발사장도 `candidates=[]`로 포함 |
 | 접지 시각이 있고 발사장 테이블이 비어 있음 | 503 `LAUNCH_SITE_DATA_INCOMPLETE` |
 | 실행 ID 없음 / 실행 종류 불일치 | 404 `ANALYSIS_NOT_FOUND` / 409 `ANALYSIS_TYPE_MISMATCH` |
+
+## 선택한 발사 후보의 예비 달 전이 궤적
+
+`POST /api/v1/analyses/{runId}/launch-options/{candidateId}/trajectory`를 본문 없이 호출합니다. 같은 실행의 `launch-options`에서 반환된 `candidateId`를 사용합니다. 서버가 실행의 후보, 좌표, 접지 시각을 확인하고 동기적으로 계산합니다. 응답의 `landingSiteId`와 `launchSiteId`는 각각 달 후보지와 지구 발사장의 DB PK입니다.
+
+| `data.status` | 응답 내용 |
+| --- | --- |
+| `PRELIMINARY` | `samples`에 `tliUtc`부터 `lunarArrivalUtc`까지의 시각, 경과 초, 지구 중심 ICRF 위치 `positionKm`와 속도 `velocityKmS`가 들어갑니다. 간격은 600초이며 도착 시각을 마지막 표본에 포함합니다. |
+| `NO_PRELIMINARY_SOLUTION` | 지원하는 전이 해를 찾지 못했습니다. `lambertStatus`와 `reason`을 반환하고 `samples`는 비어 있습니다. |
+| `FAILED` | Horizons 조회·검증 또는 수치 계산이 실패했습니다. `reason`에 `HORIZONS_UNAVAILABLE` 등의 사유가 있고 `samples`는 비어 있습니다. |
+
+세 계산 결과는 HTTP 200으로 반환됩니다. 실행이 없으면 404 `ANALYSIS_NOT_FOUND`, 해당 실행에 후보가 없으면 404 `LAUNCH_CANDIDATE_NOT_FOUND`입니다. 다른 분석 유형은 409 `ANALYSIS_TYPE_MISMATCH`, 성공 전이거나 실패한 착륙 기회 분석은 409 `ANALYSIS_NOT_SUCCEEDED`입니다.
+
+계산에는 달 도착 시각의 JPL Horizons 지구·달 VECTORS를 사용합니다. `sourceRecords`에는 검증한 응답의 대상, 조회 URL, 시각, SHA-256을 담습니다. `PRELIMINARY_EARTH_TWO_BODY` 모델의 도착 목표는 달 중심에서 지구 방향으로 2,000 km 떨어진 점입니다. `positionResidualKm`는 목표에 대한 전파 오차, `tliDeltaVKmS`는 주차 궤도 속도에서 전이 속도로 바꾸는 데 필요한 속도 변화량입니다. 예비 모델의 `launchVerified`와 `trajectoryVerified`는 모두 `false`입니다.
+
+Kennedy 예제 `Kennedy-1799883120`은 `2027-01-14T01:32:00Z`부터 `2027-01-18T22:10:00Z`까지 701개 표본을 반환합니다. 표면 접지는 `2027-01-19T04:10:00Z`이며, 표본 구간은 달 도착에서 끝납니다.
+
+
+## 원본 옵션 및 저장된 실행 기록
+
+추가 요청 옵션, 발사 후보 고정, 궤적 실행 조회, V6 이전 결과 호환 방식은 [분석 옵션과 실행 기록](analysis-history.md)을 참고하세요.

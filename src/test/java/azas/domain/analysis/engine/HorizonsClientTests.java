@@ -62,6 +62,30 @@ class HorizonsClientTests {
         assertThat(queries).hasSize(2);
     }
 
+    @Test void vectorRequestUsesBarycentricGeometricCoordinatesAndChecksTheEpochAndFrame() throws Exception {
+        Instant epoch = Instant.parse("2027-01-18T22:10:00Z");
+        try (var input = getClass().getResourceAsStream("/analysis/earth-vector.json")) {
+            body = input.readAllBytes();
+        }
+        var position = client.position(399, epoch);
+        assertThat(position.km()[0]).isEqualTo(-6.966751080513786e7);
+        assertThat(queries.getFirst()).containsEntry("COMMAND", "'399'").containsEntry("CENTER", "'500@0'")
+                .containsEntry("EPHEM_TYPE", "'VECTORS'").containsEntry("REF_SYSTEM", "'ICRF'")
+                .containsEntry("REF_PLANE", "'FRAME'").containsEntry("VEC_CORR", "'NONE'")
+                .containsEntry("VEC_TABLE", "'2'").containsEntry("TIME_TYPE", "'UT'")
+                .containsEntry("OUT_UNITS", "'KM-S'").containsEntry("TLIST", "'2027-01-18 22:10:00'");
+        assertThatThrownBy(() -> client.position(301, epoch)).hasMessage("HORIZONS_INVALID_RESPONSE");
+        assertThatThrownBy(() -> client.position(399, epoch.plusSeconds(1))).hasMessage("HORIZONS_INVALID_RESPONSE");
+        var mapper = JsonMapper.builder().build();
+        String text = mapper.readTree(body).path("result").asString();
+        for (String invalid : new String[]{text.replace("Output units    : KM-S", "Output units    : AU-D"),
+                text.replace("Reference frame : ICRF", "Reference frame : ECLIPTIC"),
+                text.replace("2461424.423611111", "NaN"), text.replace("-6.966751080513786E+07", "Infinity")}) {
+            body = mapper.writeValueAsBytes(Map.of("result", invalid));
+            assertThatThrownBy(() -> client.position(399, epoch)).hasMessage("HORIZONS_INVALID_RESPONSE");
+        }
+    }
+
     @Test void rejectsWrongTargetFrameOrEpochAndMissingRows() {
         byte[] original = body;
         var mapper = JsonMapper.builder().build();

@@ -46,6 +46,8 @@ public class AnalysisStore {
     private final DailyAnalysisResultRepository dailyResults;
     private final VisibilityWindowRepository windows;
     private final LandingOpportunityResultRepository opportunities;
+    private final CandidateHistoryStore history;
+    private final LaunchOptionService launchOptions;
 
     public record Prepared(UUID id, UUID owner, Instant expiresAt, AnalysisEngine.Input input) {}
 
@@ -66,11 +68,15 @@ public class AnalysisStore {
     public Prepared createOpportunities(long siteId, DateOpportunityRequest request, AnalysisEngine.Identity identity) {
         LandingSite site = findSite(siteId);
         var input = input(site, DateOpportunityRequest.SEARCH_START, request.deadline(), DateOpportunityEngine.STEP_SECONDS);
-        String parameters = JSON.writeValueAsString(new java.util.TreeMap<>(Map.of(
-                "landingSiteId", siteId, "searchStartUtc", input.start(), "missionDeadlineUtc", input.end(),
-                "surfaceDurationHours", request.surfaceDurationHours(), "sampleIntervalMinutes", input.stepSeconds() / 60,
-                "surfaceCriteria", "SUN_AND_EARTH_VISIBLE", "maxCandidates", DateOpportunityEngine.MAX_CANDIDATES,
-                "terrainDatasetSha256", input.datasetSha256())));
+        var parametersMap = new java.util.TreeMap<String, Object>();
+        parametersMap.put("request", request);
+        parametersMap.put("landingSiteId", siteId);
+        parametersMap.put("terrainDatasetSha256", input.datasetSha256());
+        parametersMap.put("site", Map.ofEntries(Map.entry("siteCode", input.siteCode()),
+                Map.entry("latitudeDegrees", input.latitude()), Map.entry("longitudeDegrees", input.longitude()),
+                Map.entry("surfaceElevationMeters", input.surfaceElevation()), Map.entry("observerHeightAboveSurfaceMeters", input.observerHeight()),
+                Map.entry("coordinateFrame", input.frame()), Map.entry("referenceRadiusMeters", input.sphereRadius())));
+        String parameters = JSON.writeValueAsString(parametersMap);
         return createRun(site, AnalysisType.DATE_OPPORTUNITIES, input, parameters, identity);
     }
 
@@ -153,7 +159,7 @@ public class AnalysisStore {
         String provenance = JSON.writeValueAsString(new java.util.TreeMap<>(Map.of(
                 "terrainDatasetSha256", prepared.input().datasetSha256(), "observerSha256", result.observerSha256(),
                 "observerSampleCount", result.sampleCount(), "source", "observer_sample",
-                "engineSha256", run.getEngineSha256(), "parametersSha256", run.getCalculationParametersSha256())));
+                "engineSha256", run.getEngineSha256(), "parametersSha256", run.getCalculationParametersSha256(), "sources", result.visibility().sources())));
         String provenanceId = HorizonsClient.sha256(provenance.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         int index = 0;
         for (var window : result.windows()) {
@@ -167,6 +173,11 @@ public class AnalysisStore {
                     .calculationModelLevel("ENVIRONMENT_ONLY").decisionReasons(new String[]{"TRANSFER_INPUTS_MISSING"})
                     .provenanceId(provenanceId).build());
         }
+        history.save(run.getId(), result.candidates());
+        // Publish full windows and the frozen launch batch in this completion transaction.
+        opportunities.flush();
+        launchOptions.capture(run.getId(), prepared.input().start(),
+                result.windows().isEmpty() ? null : result.windows().getFirst().startUtc());
         finish(run, result.visibility(), provenance);
         return true;
     }

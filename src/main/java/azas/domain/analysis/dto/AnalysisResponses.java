@@ -13,7 +13,15 @@ public final class AnalysisResponses {
     private AnalysisResponses() {}
     public record Accepted(UUID analysisRunId, String executionStatus) {}
     public record TouchdownWindow(Instant startUtc, Instant endUtc, Instant supportEndUtc, String surfaceStatus) {}
-    public record SurfaceCandidate(String candidateId, Instant proposedLandingUtc, Instant surfaceFinishUtc) {}
+    public record SurfaceCandidate(String candidateId, Instant proposedLandingUtc, Instant surfaceFinishUtc,
+            String status, String surfaceStatus, Instant launchUtc, Instant tliUtc, Instant lunarArrivalUtc,
+            Double transferDurationHours, String lambertStatus, Double positionResidualKm, String modelLevel,
+            boolean trajectoryVerified, List<String> reasons, java.util.Map<String, Object> lambert) {
+        public SurfaceCandidate(String id, Instant landing, Instant finish) {
+            this(id, landing, finish, "ENVIRONMENT_ONLY", "SATISFIED", null, null, null, null,
+                    "NOT_EVALUATED", null, "ENVIRONMENT_ONLY", false, List.of("TRANSFER_INPUTS_MISSING"), null);
+        }
+    }
     public record Opportunities(UUID analysisRunId, Instant earliestTouchdownUtc, List<TouchdownWindow> windows,
             List<SurfaceCandidate> candidates) {}
     public record Run(UUID analysisRunId, Long landingSiteId, String analysisType, String executionStatus,

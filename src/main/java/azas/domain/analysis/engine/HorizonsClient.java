@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
@@ -45,6 +46,9 @@ public class HorizonsClient {
     HorizonsClient(HttpClient client, URI endpoint) { this.client = client; this.endpoint = endpoint; }
 
     public record Angle(double azimuth, double elevation) {}
+    public record Position(double[] km, double[] velocityKmS, AnalysisEngine.Source source) {
+        public Position(double[] km, AnalysisEngine.Source source) { this(km, new double[3], source); }
+    }
     public record Series(List<Angle> angles, AnalysisEngine.Source source) {
         public Series { angles = List.copyOf(angles); }
     }
@@ -62,29 +66,9 @@ public class HorizonsClient {
         query.putAll(Map.of("QUANTITIES", "'4'", "CSV_FORMAT", "'YES'", "TIME_TYPE", "'UT'", "TIME_ZONE", "'+00:00'",
                 "OBJ_DATA", "'NO'", "TIME_DIGITS", "'SECONDS'", "ANG_FORMAT", "'DEG'", "APPARENT", "'AIRLESS'",
                 "CAL_FORMAT", "'CAL'", "CAL_TYPE", "'GREGORIAN'"));
-        URI uri = URI.create(endpoint + "?" + String.join("&", query.entrySet().stream().map(entry ->
-                entry.getKey() + "=" + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8)).toList()));
-
-        try {
-            var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(45)).GET().build();
-            var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
-
-            if (response.statusCode() != 200) {
-                throw new AnalysisEngineException("HORIZONS_UNAVAILABLE", null);
-            }
-
-            if (response.body().length > 2_000_000) {
-                throw new IllegalArgumentException("Oversized Horizons response");
-            }
-
-            var wrapper = JSON.readTree(response.body());
-            require(!wrapper.has("error") && wrapper.path("result").isString(), "Invalid Horizons wrapper");
-            String text = wrapper.path("result").asString();
+        return fetch(target, query, (text, source) -> {
             validateHeader(text, target, input, longitude);
-            int start = text.indexOf("$$SOE"), end = text.indexOf("$$EOE");
-            require(start >= 0 && end > start && start == text.lastIndexOf("$$SOE") && end == text.lastIndexOf("$$EOE"),
-                    "Invalid Horizons delimiters");
-            var rows = text.substring(start + 5, end).strip().lines().toList();
+            var rows = dataRows(text);
             require(rows.size() == Duration.between(input.start(), input.end()).toSeconds() / input.stepSeconds() + 1,
                     "Horizons row count mismatch");
             List<Angle> angles = new ArrayList<>();
@@ -102,7 +86,61 @@ public class HorizonsClient {
                 angles.add(new Angle(az % 360, el));
             }
 
-            return new Series(angles, new AnalysisEngine.Source(target, uri.toString(), sha256(response.body()), Instant.now()));
+            return new Series(angles, source);
+        });
+    }
+
+    public Position position(int target, Instant epoch) {
+        Map<String, String> query = new LinkedHashMap<>();
+        query.putAll(Map.of("format", "json", "COMMAND", quote(target), "EPHEM_TYPE", "'VECTORS'", "CENTER", "'500@0'"));
+        query.putAll(Map.of("REF_SYSTEM", "'ICRF'", "REF_PLANE", "'FRAME'", "VEC_CORR", "'NONE'", "VEC_TABLE", "'2'",
+                "OUT_UNITS", "'KM-S'", "CSV_FORMAT", "'YES'", "TIME_TYPE", "'UT'", "CAL_TYPE", "'GREGORIAN'",
+                "OBJ_DATA", "'NO'", "TLIST", quote(REQUEST_TIME.format(epoch))));
+        return fetch(target, query, (text, source) -> {
+            groups(text, "Target body name:[^\\r\\n]*\\(" + target + "\\)");
+            groups(text, "Center body name:[^\\r\\n]*\\(0\\)");
+            groups(text, "Calendar Date \\(UT\\s*\\)");
+            require(text.contains("Reference frame : ICRF") && text.contains("Output units    : KM-S")
+                    && text.contains("GEOMETRIC cartesian states"), "Incompatible Horizons vector frame or units");
+            var rows = dataRows(text);
+            require(rows.size() == 1, "Expected one vector");
+            String[] fields = rows.getFirst().split(",", -1);
+            require(fields.length >= 8, "Invalid vector row");
+            Instant observed = LocalDateTime.parse(fields[1].replace("A.D.", "").strip(), RESPONSE_TIME).toInstant(ZoneOffset.UTC);
+            double expectedJulianDate = 2440587.5 + epoch.getEpochSecond() / 86400.0;
+            require(observed.equals(epoch) && Math.abs(Double.parseDouble(fields[0]) - expectedJulianDate) < 1e-8,
+                    "Unexpected Horizons vector epoch");
+            double[] position = new double[3], velocity = new double[3];
+            for (int i = 0; i < 6; i++) {
+                double value = Double.parseDouble(fields[i + 2]);
+                require(Double.isFinite(value), "Invalid vector value");
+                if (i < 3) position[i] = value; else velocity[i - 3] = value;
+            }
+            return new Position(position, velocity, source);
+        });
+    }
+
+    private static List<String> dataRows(String text) {
+        int start = text.indexOf("$$SOE"), end = text.indexOf("$$EOE");
+        require(start >= 0 && end > start && start == text.lastIndexOf("$$SOE") && end == text.lastIndexOf("$$EOE"),
+                "Invalid Horizons delimiters");
+        return text.substring(start + 5, end).strip().lines().toList();
+    }
+
+    private <T> T fetch(int target, Map<String, String> query, BiFunction<String, AnalysisEngine.Source, T> parse) {
+        URI uri = URI.create(endpoint + "?" + String.join("&", query.entrySet().stream().map(entry ->
+                entry.getKey() + "=" + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8)).toList()));
+        try {
+            var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(45)).GET().build();
+            var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() != 200) {
+                throw new AnalysisEngineException("HORIZONS_UNAVAILABLE", null);
+            }
+            require(response.body().length <= 2_000_000, "Oversized Horizons response");
+            var wrapper = JSON.readTree(response.body());
+            require(!wrapper.has("error") && wrapper.path("result").isString(), "Invalid Horizons wrapper");
+            return parse.apply(wrapper.path("result").asString(),
+                    new AnalysisEngine.Source(target, uri.toString(), sha256(response.body()), Instant.now()));
         } catch (AnalysisEngineException exception) {
             throw exception;
         } catch (HttpTimeoutException exception) {
