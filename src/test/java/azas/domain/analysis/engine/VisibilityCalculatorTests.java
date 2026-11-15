@@ -3,7 +3,6 @@ package azas.domain.analysis.engine;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import azas.domain.analysis.engine.llsn.VisibilityCalculator;
 import azas.domain.landingsite.importer.LandingScreenDatasetV1;
 import java.time.Instant;
 import java.time.LocalDate;

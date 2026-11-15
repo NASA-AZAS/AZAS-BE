@@ -10,7 +10,29 @@ Gradle Wrapper 9.8.2를 사용합니다. 협업 규칙은
 
 ## 로컬 실행
 
-JDK 21과 Docker Desktop을 준비하고 저장소 루트에서 실행합니다.
+Docker Desktop과 Compose 2.24 이상을 준비하고 저장소 루트에서 실행하면 PostgreSQL과 Spring을 함께 띄웁니다.
+
+```powershell
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --build --detach --wait --wait-timeout 180
+```
+
+Spring이 시작되면 Flyway가 테이블을 생성하고 후보지 27개·지평선 표본 97,200개를 최초 한 번 적재합니다.
+DataGrip에서는 아래 값으로 PostgreSQL에 연결하세요.
+
+| 항목 | 값 |
+| --- | --- |
+| Host / Port | `localhost` / `55432` |
+| Database | `azas` |
+| User / Password | `azas_local` / `azas_local_only` |
+| JDBC URL | `jdbc:postgresql://localhost:55432/azas?sslmode=disable` |
+
+Spring 로그는 `docker compose --env-file docker/postgres.env --file compose.local.yaml logs --follow api`로 확인합니다.
+상세 실행·DataGrip 조회 방법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
+
+### IDE에서 Spring 실행
+
+JDK 21로 Spring을 직접 실행하려면 아래 스크립트를 사용합니다. Compose로 실행한 `api`가 있다면 먼저
+`docker compose --env-file docker/postgres.env --file compose.local.yaml stop api`로 중지하세요.
 
 ```powershell
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
@@ -28,10 +50,10 @@ Linux/macOS와 IntelliJ 실행 방법은 [DB 개발 가이드](docs/database.md)
 - 프로세스 응답: http://127.0.0.1:8000/health → `{"status":"ok"}`
 - DB 포함 readiness: http://127.0.0.1:8000/actuator/health/readiness → `{"status":"UP"}`
 
-로컬 DB만 시작하거나 중지할 때는 아래 명령을 사용합니다.
+DB만 실행하려면 서비스명을 지정합니다. 전체 스택은 `down`으로 중지합니다.
 
 ```powershell
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
 docker compose --env-file docker/postgres.env --file compose.local.yaml down
 ```
 
@@ -71,7 +93,7 @@ src/main/resources/
   terrain/              # 버전 고정 원본 CSV와 검증 메타데이터
 src/main/java/db/migration/ # Flyway Java 데이터 적재
 src/test/               # 실제 PostgreSQL 기반 통합 테스트
-compose.local.yaml      # 로컬 PostgreSQL 전용
+compose.local.yaml      # 로컬 PostgreSQL·Spring
 docker/postgres.env     # 로컬·CI PostgreSQL 이미지 digest
 docker/certs/           # 앱 이미지의 공개 RDS CA
 scripts/run-local.ps1   # 로컬 DB 시작과 환경변수 주입
@@ -94,7 +116,7 @@ Docker Desktop에서 로컬 PostgreSQL을 시작한 뒤 실행합니다.
 
 ```powershell
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
 docker build -t azas-api .
 docker run --rm --memory 384m --cpus 1 -p 127.0.0.1:8000:8000 --env-file .env --env 'SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:55432/azas?sslmode=disable' azas-api
 ```
@@ -113,7 +135,7 @@ JVM 힙 기본값은 128MB, 컨테이너 메모리 제한은 384MB이며 healthc
 `README.md`와 `docs/`의 Markdown만 변경되고 미배포 앱 변경이 없으면 문서 검사만 수행합니다.
 main에서 수동 실행하면 기존처럼 전체 검사와 배포를 수행합니다.
 
-로컬 Compose는 이 레포에서, 운영 Compose·Nginx·Certbot·배포 도구는 EC2에서 관리합니다.
+로컬 PostgreSQL·Spring Compose는 이 레포에서, 운영 Compose·Nginx·Certbot·배포 도구는 EC2에서 관리합니다.
 서버 관리 자료는 EC2의 `/opt/azas/management/README.md`에 있습니다.
 앱과 서버 사이의 약속 및 Actions 변수는 [CI/CD 가이드](docs/deployment.md)를 참고하세요.
 

@@ -1,4 +1,4 @@
-package azas.domain.analysis.engine.llsn;
+package azas.domain.analysis.engine;
 
 import java.time.Duration;
 import java.time.Instant;

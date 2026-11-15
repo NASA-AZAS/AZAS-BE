@@ -3,9 +3,61 @@
 로컬은 Docker PostgreSQL, 테스트는 Testcontainers PostgreSQL, 운영은 RDS를 사용합니다.
 앱은 동일한 SPRING_DATASOURCE 환경변수로 연결하며 운영 자격증명은 EC2가 Secrets Manager에서 읽습니다.
 
-## Windows 로컬 실행
+## Docker로 PostgreSQL과 Spring 함께 실행
+
+Docker Desktop과 Compose 2.24 이상을 준비하고 저장소 루트에서 실행합니다. 이 방식에는 호스트 JDK가 필요하지 않습니다.
+
+```powershell
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --build --detach --wait --wait-timeout 180
+```
+
+`postgres`와 `api` 두 서비스를 실행합니다. DB가 준비된 뒤 Spring이 시작하고, Flyway가 테이블과 CSV를 자동 적용합니다.
+첫 이미지 빌드에는 JDK·JRE 이미지와 Gradle 의존성을 내려받는 시간이 필요합니다. 이후에는 빌드 캐시를 사용합니다.
+
+컨테이너의 앱 설정은 `.env.example`에 선택적인 `.env`를 덮어써서 전달합니다. 두 파일의 DB 설정과 관계없이
+Compose의 Spring은 항상 `postgres:5432/azas`의 로컬 DB 계정으로 연결합니다. 포트 8000·55432는 로컬 루프백에만 공개합니다.
+`.env`의 선택적 로드는 [Docker Compose의 required 옵션](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/)을 사용합니다.
+
+```powershell
+docker compose --env-file docker/postgres.env --file compose.local.yaml ps
+docker compose --env-file docker/postgres.env --file compose.local.yaml logs --follow api
+```
+
+Swagger는 `http://127.0.0.1:8000/docs`, 후보지 API는 `http://127.0.0.1:8000/api/v1/landing-sites`입니다.
+코드를 변경한 뒤에는 처음의 `up --build` 명령을 다시 실행하세요.
+
+## DataGrip에서 로컬 DB 확인
+
+PostgreSQL 데이터 소스를 만들고 다음 값을 입력한 뒤 연결을 확인합니다.
+
+| 항목 | 값 |
+| --- | --- |
+| Host | `localhost` |
+| Port | `55432` |
+| Database | `azas` |
+| User | `azas_local` |
+| Password | `azas_local_only` |
+| SSL mode | `disable` |
+| JDBC URL | `jdbc:postgresql://localhost:55432/azas?sslmode=disable` |
+
+DataGrip은 호스트에서 실행하므로 `localhost:55432`를 사용합니다. Docker 안의 Spring만 서비스명 `postgres:5432`를 사용합니다.
+연결 후 `public` 스키마를 선택하고 새로고침하면 업무 테이블 7개와 `flyway_schema_history`가 보입니다.
+Spring 시작 전에는 마이그레이션이 실행되지 않아 테이블이 없을 수 있습니다.
+
+```sql
+SELECT count(*) FROM landing_site;   -- 27
+SELECT count(*) FROM horizon_sample; -- 97200
+SELECT landing_site_id, site_code, latitude_degrees, longitude_degrees
+FROM landing_site ORDER BY site_code;
+```
+
+새 DB에서는 분석 요청 전 `analysis_run`과 결과 테이블이 비어 있는 것이 정상입니다. 데이터베이스 UI 컨테이너는 추가하지 않습니다.
+
+## Windows에서 Spring 직접 실행
 
 JDK 21과 Docker Desktop을 준비한 뒤 저장소 루트에서 실행합니다.
+Compose의 `api`가 실행 중이면 먼저 `docker compose --env-file docker/postgres.env --file compose.local.yaml stop api`로 중지해
+8000번 포트가 겹치지 않도록 합니다. 기존 PostgreSQL 컨테이너와 데이터 볼륨은 계속 사용합니다.
 
 ```powershell
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
@@ -27,8 +79,10 @@ SPRING_DATASOURCE_PASSWORD=azas_local_only
 
 ## Linux/macOS와 IDE
 
+Compose의 `api`가 실행 중이면 먼저 `docker compose --env-file docker/postgres.env --file compose.local.yaml stop api`로 중지합니다.
+
 ```bash
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
 export SPRING_DATASOURCE_URL='jdbc:postgresql://localhost:55432/azas?sslmode=disable'
 export SPRING_DATASOURCE_USERNAME=azas_local
 export SPRING_DATASOURCE_PASSWORD=azas_local_only
