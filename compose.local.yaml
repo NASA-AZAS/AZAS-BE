@@ -13,5 +13,25 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  api:
+    image: azas-api:local
+    build:
+      context: .
+    env_file:
+      - path: .env.example
+      - path: .env
+        required: false
+    environment:
+      AZAS_ENVIRONMENT: local
+      # Containers reach the local database by service name, not the host's localhost.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/azas?sslmode=disable
+      SPRING_DATASOURCE_USERNAME: azas_local
+      SPRING_DATASOURCE_PASSWORD: azas_local_only
+    ports: ['127.0.0.1:8000:8000']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 384m
+    cpus: 1
 volumes:
   postgres-data: {}

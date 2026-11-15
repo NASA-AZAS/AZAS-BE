@@ -1,6 +1,5 @@
 package azas.domain.analysis.engine;
 
-import azas.domain.analysis.engine.llsn.VisibilityCalculator;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
