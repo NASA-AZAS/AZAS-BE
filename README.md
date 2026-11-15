@@ -1,144 +1,50 @@
 # AZAS Backend
 
-NASA Space Apps의 Lunar Landing Site Navigator API입니다. Java 21, Spring Boot 4.1.2,
-Gradle Wrapper 9.8.2를 사용합니다. 협업 규칙은
-[조직 기여 가이드](https://github.com/NASA-AZAS/.github/blob/main/CONTRIBUTING.md)를 참고하세요.
+[Try the mission planner](https://azas-app.vercel.app/) · [Explore the API](https://api.azas.n-e.kr/docs)
 
-작업 브랜치는 최신 `dev`에서 분기하고 PR도 `dev`를 대상으로 엽니다.
-`dev` 대상 PR은 CI 검사를 수행하며, `dev` 병합만으로 운영 배포하지 않습니다.
-운영 반영이 필요할 때 `dev → main` PR로 릴리스합니다. `main`의 자동·수동 배포 흐름은 유지합니다.
+LAMP (Lunar Access and Mission Planning) helps you find a time to land near the Moon’s south pole when both the Sun and Earth will stay in view. Choose one of 27 candidate sites and a mission deadline to see when you could land, when you would need to launch from Earth, and what the sky would look like after touchdown.
 
-## 로컬 실행
+## How LAMP finds a landing window
 
-Docker Desktop과 Compose 2.24 이상을 준비하고 저장소 루트에서 실행하면 PostgreSQL과 Spring을 함께 띄웁니다.
+From a lander near the south pole, a ridge can block the view of the Sun or Earth. Every ten minutes, LAMP checks whether each appears above the local skyline in its direction. The default viewing height is one metre above the surface.
 
-```powershell
+By default, a landing window is the range of touchdown times that leave **48 consecutive hours** with both the Sun and Earth in view. The search starts on 1 January 2027 and runs to the chosen deadline in 2027–2029. The first window gives the earliest possible touchdown. All mission times are in UTC.
+
+## Database diagram
+
+[Explore the tables and their relationships in dbdiagram](https://dbdiagram.io/embed#theme=dark&c=pako%3AeNq9W2tvG0ey%2Fe5f0dgvjgFGcDaJFxtcCNDKyoa7MqUrycm9awST5kyTbGs4PTs9I5q%2B2P9%2BT1V3z4szfDjaBQJHpPpRXY9Tp6pbt4X5qOJSXPzj4l783wshElnKubQqKre5%2BkG8vDW2XBbq%2Fr%2BvX%2BK3M1PSl1cyXolC%2FbNSthS2lEVphRSZ2giZyXRrtT0TDytVLyYelcotPup0K94%2FXApbrdey0ArTskSUGFrqtRIbnSVmY0VlVSIWphBrba02mchTmWU6W56JaVaqYq0SLUslVqYqsGIs07hKZYmRdiIKmT1iqFtailQ%2FKfGTKfRn%2FBZDY2wmCyVMVVqdKKEhu41Nrs5evvjXixdXWbWuT8FKYLX8PL2f%2FmV6PX34X3x4e%2FFwFd3c3t7cPbyfTR%2BmV%2Ff1TPVJxRUJEkEtZWV58u3V7O109lf8dPd%2BNnM%2F3b%2B%2FvLy6env1Fj%2F%2FeDG9xg9hjULZKi3bC1zevLu9vnrgwbcXdw%2FTi2v89IDVLi8ehpaIVQrTaJlGc5NseY379zP8e4XZP%2BH%2Ff7uZzh7q4SbPTVFWmS637W2vZj9P725m765mD9HN7JqOfnt3dT19N51d3NGn97O%2Fz25%2B4XX%2F5%2FL6%2FVsnwYOcpzCoKgqps4h8wKqSF%2Bx9F%2BlEzPVSZ6X4kD9OhM7iQq1VVv7qHZHGxAZGepJFvJLFV9%2B8fv1KfMhMKbIqTScic%2F44k3Aes2BHsvCJWIXpE7gafFVaAQ9K4BZfW%2ByhsrOX7T2eVMFuNrxNe6RdyT9%2B%2F6Ye%2BOa7jjjQIGKiFutH7KeKvKADdqVb6LTxfQ0%2FV6WkLZxYsTEFZIWHR4VaqEJlsYoWBR1yXMJmpM1X%2BCkqZKIrG2FpnA66LRWEGVDeHY8LAtbLiHcGGuFILA0ElLZC1MCvnjjQJiKuCgwsEX%2FfTP707Z8m371%2BTeeA93rlarhSVkbB6FCyXmgsNzcmVTIbEOWXlYIMRfATMVdb4%2FEBuz%2BpLWYjdqVYwaBzmFEgmuNHlTi48RIFYwlAzCNOXpL5qyzs76RzhoiC4sVHa7L5gEg%2FmU3HrdRCZzAdrLZclR5jsiWsOSGjplYsZU6ylRsSz8p1HixdqBhmtbwa4Ahuz18vuk6iCFrJPbwr4LSlSiJZMkJCo%2Bu8%2FNyWExJJwMUP4rfMbL569RvNAowCiFwQC%2FFVO5QmfaeHGzm3pYn%2FajD%2BJoO1s7LYMhArh%2Fiwm60jLa0y2diK3VdcySLVsKAfavHDmn4rn4D9jAvWiFwibTiMVQTJZGhRFjJ2vuZCwincgbJDFB%2FBkdWlA%2BX2F3uxZA%2FutEOI1%2BngzfeDcHNPAvA4nKzlHDGWT82y8rajjFRWiYoShQyKk%2F4hMRUdJIcraNL9H7r7pyZbHj%2BjFuc6TOuJQ140EbnBsSgHKqf1BHl6KfmbDfzJR0NVLKD%2BqA7vABtHCfATB0MNcW4tIecGezSO0iCLAyi3s5lbhcguIhdREc%2BKgjxfIEUfsTYrxI624gkTaY1FYdZOTljR4UYjWUCOihzTIAIY0Lw5zSayKYhCZP9ZAYUiog8nSXhPfCNV2bJckbKkcAs5SNtofMvrMxZD6DWoF4z4RKjD7uDkCM7sEhn7v0vZwWm%2FHXTaGlv90SkKWVWrOleLekmQOpWfiWsXYICxhSq3cByVENGzKpcF8S9awVqKMidaD3d2w27SxNgY7lwQICQ6ofV9gEP1MXslTMLyUmqaOI0RfWvyJVA4nMVBbjDsk1YbWsl5WRtVVo4aRg6q9%2BJKO1blZ72uylXERxZ2LdO0M6bW%2B1sNl2Dh%2FQ4gXHNIlThPfI0DFaZarsS3k%2B%2F%2F%2FGenx7D4STDQbBRDX48bbb2zk%2FZSjCrK1cQLkQiFmNtCWVnwRbdX18WCbk6S44LSYQCD2rMet9AP4m1aMuAvoC%2BgfuqzqxPRbwcQdWLM6RxkiJ48GBA5dnEcRDDCKYoOZNIALfh48iI9%2F%2B75yaTrFK8oEfWcm9Bm1UVLpxiCbsKbpDYiAIC%2BCCHg0OqGhzihA8KBjECLCyCs3MitoxdzWxaVW0cTkMG%2BC6Qjr2eqpjz0GcaEhUlTqrsasA4g7tIxpAAU5YY8PBCxdgzVIH5iEPl5%2B%2BiNd6oH3TB8N8uz0B1%2FRs2YVUAC0ihKzZDfsuiUoApzmnx47Cy4GfY4dS836%2FTdDjlkS8FD7vgL5WHW6X3lEPOKBBEyzyFRTScet0Pe6MoX2MV5kicdFGWUslpsF2SudmtHhQN7JtoYUlub51VZvGrTvPpzn%2BWFEgYB4GA1yOwINnzdTXYCp4icietX0CHcmbyDHKJ%2BTa76%2FbQuYip2Krezx1G5Oo22Tw4EYMsS%2FnbyJbdCAmVCKZKEaRyOTP0liixjEVie7xsU1InZZG2T1Q2TAn5ENmt%2FQUarKvzjHfCo9NrpwHQ%2FdSOn33DZ%2BWKoVnrpWzKOggI6kI6ibt%2Bl%2B%2BmDt8dNVcamgaIgGFWYoHArFLac4jBrC1EAZlt8q1PVHY3%2FoBduaL10tbvbCwlqLXe6EeBzbY2w%2F44iZkd5Kkv2DnTgGVFvAICaRg10jjUL3vkRvQLXQYBvxzHT1qnG2esTM6F%2B89od13f1oqRSEfM8%2Fieo%2BFKCIifwNP6W9IbJhXNC0jN9E%2FqCiZIJp8%2FNioThHE%2BhTX4bsMo3FXtb%2B4lD6uEO5ycZl9yqhDOZxcLFiAeXVr%2FR87WgcOLFnkuMNRQuTb4N7oMz6Vi1%2Bp3linzJr8ZFbFo5wA1FFVD0iTSbVIXPgC11U0tWu7LXAa0p5hreqEoCPK%2BClvQteQ90tsY7WrWJ613Ew8aQf7vSHmcTqHuyUhP16IqCUohscLj95gfuk5GGLaROwYh2e4bcjpLLDBWVjsH2rJVL6L1Un8oPrW5QXgALMiZXjfk4wfhshlgGNtbdZMRtjv8r23cLtujEeSXZYcOJFqYoUE9qcBWuu9YTnx5bPaCmI47iqoJPctKcq5X2X69xtvT3NIc6AFnszu8MgWTarvaPQS5AfDqE9%2FqassEX2mtmY4pHbgqxulwZTpkla3lPNV%2FrsmTFuHqIJl7cTr2n1LupTzlc3I4FLhPF%2BdZbitb4aOZiXXEpTWdpRxVfOticeoY%2BtJHjK0D4Bc%2BCs6BK2UjNdAECe9Am5sBibEPzijqN1Ju07IKhx3iInTX2e%2BV5Gbczw4Tf%2Bjh%2BvpsEfsPBEcE4eCfj5qrQJol4ORYFq42B%2Fbl4PbJKPbSzTjcZ%2F9c5Ks%2Bd%2B5CX4uZOfLWD89N7Mbt5ELP319fiYvZ2EI1bY16NyFUPb%2BTqNS7D3RRIje8z0k2Qq2y4kHI3WCAr1EmmHgKc2MMUvLaY1EDlYNRl%2FQlVGZmLaibG1JGvqXBS8ym%2FJfxhiaq1zZP4BixqDsN539%2B7Dfxmb1NzmGIN8oBuku1COue4TsqNiRBRn37r8pG7rNt2qcoYSWogG45TsXt7Z9zPW1opprAUjnx50KziWj%2FasogeE%2Fo77KM7DaOWRy5P9Z9vGka0ZMQJd4y2s%2BiFdDV3aH64O00qqMRjRh7mDY7kzcykxigqvzayblJO6t6QEd%2FAWT2PhNvBhUMn3SuBK8f%2FhJyuNPwyKT9S6%2BDZpeRVB2Wdm5L%2BSSgBbSj1ni4ymZ%2B3OULcngf3BG%2BczPkp577G9pzQEXRVCgwhLrb2hLZu1%2Fa8o234kyRsLPGF06rsP64RWmtXK2P2hV2XPCK07MGrLPAJtjQxyFnpaC8VKkN1e2uKU%2B8xk2qHvXZTRUibvTD3ndCVdjwupss1LiR9ZU73sEYgrz2Chcg2n%2B%2F03HeKj9AcZdgGre1fB3zXJ9N%2B9WiRymWLAz%2FLVWMvKU26OWin59%2FlO2OAfj6eTBqG4BKoT0g7%2FKfHD3xKa642KQsmctvyTLpCIIbgucIiuLC2tQlCD99zAb7pdVWcpEvo7YRbC%2FxrGK%2BumBLfpa25r0%2B4baLQFHWRq19ZRzvfHnhBcYBStJ2i92Kk97Ez1G99uA%2FhBx7qQsxNReRjG9UxFVnUW1myrxFxG8bWjXQSh4mY8n1JK5b6KVC1XMYUi%2F2%2BxcvB6%2FJhvU16Wpn0NTHM4rtaOO9Pajx417r73PgiYOcQmZj4bG08VLYxkqobPzUuDAg4Jq91kvGtBMUBUb4cYtTK4uyLmt6936rfbg3dzbdfErXY7fivfyfFbS%2FYrfrfDN6CtgpTVG70MzXAQ0vT2wbVO1eHdDVctcsCV8u7Ma7f7C%2Bxd99PDXzVu11w11Dk57rdrjz%2BFrd1D2IFhdY8RX3r0Kd9EV9v4aqTtSrJL1Il3fX8GtwnVkXJpcoXJZRg3aOBoTfhEEDkhckN6qkozNvb0wz3e75TNtbC6L3vCiWlhT7t8DOlX5u7iJ1uSFnIzHKBiar5o7vr2NuiCKCk4kIuSmcNV4m6yEXCeHRdB%2BrgUd7Br%2Fh%2Bz9RX4J7k8K6yKDSV6sOSLVQRhY7hPvaDwSS8ARhbk%2FKNXtf2b%2Fq2D%2Fu6uwnqzxSFKaJHnZrRS9XuRke8C2s%2F7nLkEC6RVNQ6xaqpBjekbF4vSuAkfkwZ0dzy%2Fv0ANd65lReaNalVu11R3iJKUeyn406fhFwF2mQptmoi1XQRCbNGm5UtFbQ3B9kFzNpeA%2FJnHum7EYwAYZzNIQgOGBxjUCHbXdp4iLj1kbXD3YYmDETpq93bb8UPxPz1FXEo7tIE%2FG3fOnX79%2FTyN0FAJyCvrQmhg051ITM2j84rD266EK6e5f6ty1h3avFD5xLqbOB92Hn%2F0djQoA%2FwE0VHQy4rCx0jafHi3TclZ%2F0Lr%2FPu7v1fj63au2V%2FrmXbhnyuNQcp1Fk%2FnZ939%2B7%2FemzxHZ50Nsp0z0ckGZ0wtuc4gXmGUwUSVXOC8ACqTaEOc6FmmnuUtEOeu4OYLhFoDV9zf1HSPSrXPnf94FNU9yhtqUYHjGbzVO9%2B%2BZx5tptcdwWrsykcgCEvelwPr%2BTS4e4KISv1riF%2FbTbvJJojEkLPvYbek3Bp3eSjNqq3KuseVvuHfO7xuRPaFdEq9N3dqwX%2FwCM8LPHrcQWIfF64K2gMQr7nm0Y%2BJZzDFJ5YcV%2BG3oQ8hWRqxd%2Fub2YDb08M37tFc1mipjr0nqFpB%2Bx10%2B4d5jAnGLNm%2By5wwKK1qnfdctTFvMn%2BWpgq9y%2B%2F3MsP4%2FdpdzlgD3r%2B07z9ELP6j32gXeuyrbb13cjW37aBhrl7M2Zq8B7K6OG%2B901du%2FPDB74NxTzq%2F6fGPFY5L2x379zH7HUSXI48Kxp%2BED6EHf%2F%2BZ0B70W0AyZ8Z0g6kgCMwo6vjGjL2w8u%2B18HX%2FlETPeWs%2FDUyeaYrmmifzqsJXXpuiEoC6UCXLafxb9cuUB83LzKse9rfvI%2BCWZh12e6zMu9p2r%2FjCA%2F%2FKaypCdx20RbPD6%2Bjul%2F18eRZXHdvnh98ODXgYQc6wt49h98Q7Hs5MHqDfxJY6iyvyshmMrcrfD2U6ZqT1SkxfNpNwR38pRPwX1z5D%2F4vdsJktaQeVfgYIgi6WKr628xQGZZ6uh7Rk%2Fp%2BY%2FOkVE8hDPFKGT1hTDRKLfgpS0iTA1ppJWtZlvRIjWrHGu4dCrviOZcInVCOtbKDb4qH6cOX6Dt%2F9cQGsxOvZZ8F3B8kebF71%2B1NJPuXPWOB1Xp3PBZbg%2B%2FeRmnywZfJ7KQpXI%2BelHujDsVhbd5Pw3YdGb09afTnY0Y%2FqdTEVLd8GvOekfHbE8d%2FPm58%2F49F%2BnabdMw0RDfvm%2F5ZUAVd2%2FjeU%2BG9KcjV%2B1VO5JANR895bBXD%2Byw9pXU9CEnpmt6%2BNiyIgsH%2FoWErQdD7Numf137tLvUSDx0SQZR5wssBMHUMlARFDrkMtwnirv47lR9pYqtNMVYSnlh1hiJ2h9zurPP1yeuMCnTEdm69rum%2F6Gi9JQ7Ti%2FPhUxycuLOdb8bsws55X6idIS%2F%2BHwOK3S8%3D)
+
+## Run the API locally
+
+From the repository root, start the Spring Boot API (Java 21) and PostgreSQL 17 with Docker Compose 2.24 or later.
+
+```sh
 docker compose --env-file docker/postgres.env --file compose.local.yaml up --build --detach --wait --wait-timeout 180
 ```
 
-Spring이 시작되면 Flyway가 테이블만 생성합니다. 새 DB에는 [DataGrip 업로드 안내](docs/terrain-data.md)에 따라
-후보지 27개·지평선 표본 97,200개를 직접 넣으세요. 이미 적재된 DB는 그대로 사용합니다.
-DataGrip에서는 아래 값으로 PostgreSQL에 연결하세요.
+Open the local API on port 8000. PostgreSQL listens on port 55432. Compose supplies the default settings. To connect a frontend running at a different address, copy the example environment file to `.env` and add that address to the list of allowed origins. [Local API explorer](http://127.0.0.1:8000/docs) · [Example settings](.env.example)
 
-| 항목 | 값 |
+On first startup, the API creates the database tables. Load the data for the features you want to use.
+
+| To use this feature | Load this data |
 | --- | --- |
-| Host / Port | `localhost` / `55432` |
-| Database | `azas` |
-| User / Password | `azas_local` / `azas_local_only` |
-| JDBC URL | `jdbc:postgresql://localhost:55432/azas?sslmode=disable` |
+| Browse landing sites | In DataGrip, import the three numbered CSV files in order, then run `after-import.sql`. You should see 27 sites and 97,200 measurements of the local horizon. [Import files](data/import) |
+| Find landing windows and view the sky | From the separate `LLSN-Java21-ver2` archive, load the ten-minute observations for your chosen site. Match the site code in the filename to the corresponding landing site when importing. |
+| Compare launch sites and calculate a flight path | From the same archive, import `experiments/launch_sites.csv`. Number the 13 sites in their original row order, starting at 1. [Database import guide (Korean)](docs/database.md) |
 
-Spring 로그는 `docker compose --env-file docker/postgres.env --file compose.local.yaml logs --follow api`로 확인합니다.
-상세 실행·DataGrip 조회 방법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
+## Plan a mission with the API
 
-### IDE에서 Spring 실행
+1. **Choose a landing site.** The preview shows the average percentage of the day that the Sun is visible, and the same measure for Earth. These averages use the full two years of observations from 2027 and 2028.
+2. **Set a deadline.** Submit the site and deadline. The API gives you a reference for checking the progress and results of that search. Each window has an earliest and a latest touchdown time. Some searches finish with no suitable window.
+3. **Explore the surface.** Select the earliest touchdown to follow the Sun and Earth across the local sky. The timeline shows when terrain blocks either one. You can also look up visibility for a particular day.
+4. **Work back to launch.** For that first touchdown, compare schedules from Earth. Each available schedule starts with launch, followed by the burn that sends the spacecraft toward the Moon, lunar arrival, and touchdown.
+5. **Open a flight path.** Choose a launch option to calculate a preliminary trajectory using positions from NASA’s JPL Horizons service. You can reopen the saved path later without repeating the calculation.
 
-JDK 21로 Spring을 직접 실행하려면 아래 스크립트를 사용합니다. Compose로 실행한 `api`가 있다면 먼저
-`docker compose --env-file docker/postgres.env --file compose.local.yaml stop api`로 중지하세요.
+The API explorer lets you try each request. The detailed guide includes request examples and response fields. [Interactive API reference](https://api.azas.n-e.kr/docs) · [Analysis API guide (Korean)](docs/analysis-api.md)
 
-```powershell
-if (!(Test-Path .env)) { Copy-Item .env.example .env }
-.\scripts\run-local.ps1
-```
+## Checks and limitations
 
-스크립트는 루트의 `compose.local.yaml`로 PostgreSQL을 시작하고 Spring을 실행합니다.
-환경변수는 기존 프로세스 값 → `.env` → `.env.example` 순서로 우선 적용합니다.
-별도 DB 연결 변수를 설정했다면 `-SkipDatabase`를 사용할 수 있습니다.
-Spring 자체와 IDE 직접 실행은 `.env`를 자동으로 읽지 않으므로 실행 설정에 변수를 등록하세요.
-Linux/macOS와 IntelliJ 실행 방법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
+To check a local setup, open the readiness page to verify the database connection, then list the landing sites in the API explorer and check that all 27 appear. To run the automated checks, start Docker and run `./gradlew check bootJar` with JDK 21, or `.\gradlew.bat check bootJar` on Windows. The tests use a separate PostgreSQL database. [Local readiness check](http://127.0.0.1:8000/actuator/health/readiness)
 
-- Swagger UI: http://127.0.0.1:8000/docs
-- OpenAPI: http://127.0.0.1:8000/openapi.json
-- 프로세스 응답: http://127.0.0.1:8000/health → `{"status":"ok"}`
-- DB 포함 readiness: http://127.0.0.1:8000/actuator/health/readiness → `{"status":"UP"}`
-
-DB만 실행하려면 서비스명을 지정합니다. 전체 스택은 `down`으로 중지합니다.
-
-```powershell
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
-docker compose --env-file docker/postgres.env --file compose.local.yaml down
-```
-
-DB는 `127.0.0.1:55432`, 데이터베이스 `azas`, 계정 `azas_local` / `azas_local_only`입니다.
-Compose 프로젝트명 `azas-local`과 볼륨 `azas-local_postgres-data`를 유지해 기존 로컬 데이터를
-계속 사용합니다. `down`으로 중지해도 데이터는 남습니다.
-
-## 빌드와 테스트
-
-```powershell
-.\gradlew.bat --no-daemon check bootJar
-```
-
-테스트는 Testcontainers로 별도 PostgreSQL을 자동 실행하므로 Docker가 켜져 있어야 합니다.
-실행 JAR은 `build/libs/azas-api.jar`에 생성되며 직접 실행할 때도 DB 연결 환경변수가 필요합니다.
-의존성은 `build.gradle`, 고정 버전은 `gradle.lockfile`로 관리합니다.
-의존성을 변경하면 `check bootJar --write-locks`로 검증하고 잠금 파일을 함께 커밋하세요.
-
-## 구조와 환경 설정
-
-Gradle group과 프로젝트명은 `azas`이며, Java 기본 패키지도 `azas`를 사용합니다.
-
-```text
-src/main/java/azas/
-  AzasApplication.java
-  domain/
-    landingsite/        # 후보지 조회 API·지형 데이터
-    analysis/           # 기간 분석 API·분석 코드 연결·결과 저장
-  global/
-    config/             # CORS, OpenAPI, 앱 설정
-    health/             # /health
-    response/           # ApiResponse, ValidationError
-    exception/          # ErrorCode, BusinessException, 전역 처리
-src/main/resources/
-  application.yaml
-  db/migration/         # Flyway 업무 SQL
-src/main/java/db/migration/ # 기존 V2 이력 호환용 빈 마이그레이션
-data/import/            # DataGrip 수동 업로드용 CSV, 앱 이미지에서 제외
-src/test/               # 실제 PostgreSQL 기반 통합 테스트
-compose.local.yaml      # 로컬 PostgreSQL·Spring
-docker/postgres.env     # 로컬·CI PostgreSQL 이미지 digest
-docker/certs/           # 앱 이미지의 공개 RDS CA
-scripts/run-local.ps1   # 로컬 DB 시작과 환경변수 주입
-.github/workflows/ci.yml
-```
-
-기능 코드는 `azas.domain.<기능명>` 아래에 추가합니다.
-공통 응답·예외 처리 사용법은 [API 개발 규칙](docs/api-conventions.md),
-JPA·Flyway 사용법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
-업무 테이블은 [DBML ERD](docs/erd.dbml), 후보지 27개·지평선 표본 97,200개의
-초기 적재와 조회 방법은 [지형 데이터 가이드](docs/terrain-data.md)에 정리되어 있습니다.
-후보지 조회·기간 분석 요청과 결과 조회는 [후보지·분석 API 가이드](docs/analysis-api.md)를 참고하세요.
-요청 ID와 텍스트/JSON 로그 설정은 [로깅 가이드](docs/logging.md)에 정리되어 있습니다.
-앱 설정은 `application.yaml`, `AZAS_`와 `SPRING_DATASOURCE_` 환경변수를 사용합니다.
-`AZAS_CORS_ORIGINS`는 JSON 배열이며 기본값은 빈 목록입니다.
-
-## 앱 Docker 이미지
-
-Docker Desktop에서 로컬 PostgreSQL을 시작한 뒤 실행합니다.
-
-```powershell
-if (!(Test-Path .env)) { Copy-Item .env.example .env }
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
-docker build -t azas-api .
-docker run --rm --memory 384m --cpus 1 -p 127.0.0.1:8000:8000 --env-file .env --env 'SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:55432/azas?sslmode=disable' azas-api
-```
-
-Linux에서는 앱과 DB가 연결 가능한 Docker 네트워크의 DB 주소를 사용하세요.
-JDK 단계에서 JAR을 만들고 JRE 이미지의 UID 10001로 실행합니다.
-JVM 힙 기본값은 128MB, 컨테이너 메모리 제한은 384MB이며 healthcheck는 DB readiness를 사용합니다.
-앱 이미지에는 RDS TLS 검증에 필요한 공개 CA를 포함합니다.
-
-## CI/CD와 운영 설정
-
-[GitHub Actions](https://github.com/NASA-AZAS/AZAS-BE/actions)는 Java·PostgreSQL 통합 테스트,
-로컬 Compose, 앱 이미지의 readiness·스키마·실행 권한·DB 장애/복구를 검사합니다.
-요청 ID와 텍스트·JSON 요청 로그, 공개 CA 파일도 실제 이미지에서 검증합니다.
-앱 변경이 있는 main에서 검증한 이미지를 SHA 태그로 ECR에 올리고 OIDC·제한된 SSM 문서로 EC2에 전달합니다.
-`README.md`와 `docs/`의 Markdown만 변경되고 미배포 앱 변경이 없으면 문서 검사만 수행합니다.
-main에서 수동 실행하면 기존처럼 전체 검사와 배포를 수행합니다.
-
-로컬 PostgreSQL·Spring Compose는 이 레포에서, 운영 Compose·Nginx·Certbot·배포 도구는 EC2에서 관리합니다.
-서버 관리 자료는 EC2의 `/opt/azas/management/README.md`에 있습니다.
-앱과 서버 사이의 약속 및 Actions 변수는 [CI/CD 가이드](docs/deployment.md)를 참고하세요.
-
-- 운영 Swagger UI: https://api.azas.n-e.kr/docs
-- 운영 readiness: https://api.azas.n-e.kr/actuator/health/readiness
+- **Visibility** measures whether the centre of the Sun or Earth clears the local terrain. Actual solar power and radio performance require separate calculations. If the ten-minute observation record has gaps during the search period, the search reports incomplete data.
+- **Flight paths** assume a parking orbit around Earth and use a simplified gravity model for the trip to the Moon. The calculated path ends at lunar arrival. Entering lunar orbit and descending to the surface require separate flight models.
