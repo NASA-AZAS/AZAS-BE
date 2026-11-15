@@ -172,6 +172,35 @@ $env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djavax.net.ssl.trustStoreType=
 
 운영 실행 방법과 CI/CD 경계는 [배포 가이드](deployment.md)를 참고하세요.
 
+## 접지 후보에서 본 지구와 태양
+
+착륙 기회 분석이 `SUCCEEDED`이면 `GET /api/v1/analyses/{runId}/date-opportunities`의
+`data.candidates[].candidateId`를 선택합니다. 같은 실행에서 아래 경로를 본문 없이 호출하세요.
+
+```http
+GET /api/v1/analyses/{runId}/surface-candidates/{candidateId}/post-landing
+```
+
+HTTP 200의 `data`는 팀에서 공유한 `post_landing.json`과 같은 구조입니다. `siteId`는 달 후보지 코드이고,
+`touchdownUtc`와 `surfaceEndUtc`는 선택한 접지 후보의 접지·활동 종료 시각입니다.
+V6 이전 실행도 접지 후보 목록에서 받은 ID로 조회할 수 있습니다.
+
+| 필드 | 화면에서 사용하는 방법 |
+| --- | --- |
+| `samples[].earth`, `samples[].sun` | 시각순으로 방위각 `azimuthDeg`(현지 북쪽 0°부터 시계 방향)과 고도각 `elevationDeg`(현지 수평면 기준)를 연결하면 각 천체 중심의 겉보기 경로입니다. |
+| `terrainHorizonDeg`, `visible` | 같은 방위각에서 선형 보간한 지형 지평선보다 고도각이 높으면 가시입니다. 같으면 차폐입니다. `jointVisible`은 두 천체가 모두 보인다는 뜻입니다. 모델명은 `BODY_CENTER_LOCAL_TERRAIN`입니다. |
+| `samples[].utc`, `elapsedSeconds`, `sampleStepSeconds` | 접지부터 활동 종료까지 **실제 UTC 10분 격자**의 표본을 반환합니다. 경계가 격자에 있으면 포함합니다. 경과 초는 접지 시각부터 세므로 첫 표본도 0보다 클 수 있고, 짧은 활동에 격자가 없으면 빈 배열입니다. |
+| `nextTerrainOccultationUtc.earth`, `.sun` | 접지 시각부터 각 천체가 처음 가려진 관측 시각입니다. 활동 종료 뒤도 탐색합니다. 완전한 관측 자료의 마지막 경계(2030-01-01 00:00 UTC)까지 가려지지 않은 천체는 `null`입니다. |
+| `meanDailyVisibility` | 선택한 착륙지의 2027-01-01~2028-12-31 UTC 일별 가시율 731개를 산술평균한 백분율입니다. 원본 마감일이 23:59 UTC이므로 마지막 날은 86,340초를 분모로 씁니다. |
+
+Site01 예시에서는 2027-01-19 04:10 UTC에 접지한 뒤 48시간 동안 표본 289개를 반환합니다.
+첫 지구 표본의 방위각은 125.088221°, 고도각은 5.844995°입니다. 첫 차폐 표본은 지구가 1월 23일 10:50 UTC,
+태양이 1월 26일 17:30 UTC이고, 731일 평균은 지구 50.107440%, 태양 16.269553%입니다.
+
+없는 분석은 404 `ANALYSIS_NOT_FOUND`, 해당 분석에 없는 접지 후보는 404 `SURFACE_CANDIDATE_NOT_FOUND`입니다.
+다른 분석 종류 또는 성공 전 실행은 409, 잘못된 지평선은 422 `ANALYSIS_TERRAIN_INVALID`,
+계산에 필요한 관측 격자가 빠졌으면 503 `OBSERVER_DATA_INCOMPLETE`입니다. 조회는 DB를 읽으며 Horizons를 호출하지 않습니다.
+
 ## 첫 접지 시각 기준 발사장 후보
 
 `GET /api/v1/analyses/{runId}/launch-options`에 착륙 기회 분석의 실행 ID를 전달합니다. 응답의 `data.landingSiteId`는 해당 실행의 달 후보지 PK이고, `data.touchdownUtc`는 해당 실행에서 표면 조건을 만족한 가장 이른 구간의 시작(UTC)입니다. `executionStatus`가 `SUCCEEDED`인 실행에서 조회할 수 있으며, 전체 결과가 `TRUNCATED`여도 저장된 접지 구간을 모두 대상으로 합니다.

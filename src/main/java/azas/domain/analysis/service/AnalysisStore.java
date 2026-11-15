@@ -21,7 +21,6 @@ import azas.domain.analysis.repository.DailyAnalysisResultRepository;
 import azas.domain.analysis.repository.VisibilityWindowRepository;
 import azas.domain.analysis.repository.LandingOpportunityResultRepository;
 import azas.domain.landingsite.entity.LandingSite;
-import azas.domain.landingsite.repository.HorizonSampleRepository;
 import azas.domain.landingsite.repository.LandingSiteRepository;
 import azas.global.exception.BusinessException;
 import java.time.Instant;
@@ -41,7 +40,7 @@ public class AnalysisStore {
     public static final int TIMEOUT_SECONDS = 120;
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private final LandingSiteRepository sites;
-    private final HorizonSampleRepository samples;
+    private final LandingSiteHorizon horizon;
     private final AnalysisRunRepository runs;
     private final DailyAnalysisResultRepository dailyResults;
     private final VisibilityWindowRepository windows;
@@ -86,24 +85,10 @@ public class AnalysisStore {
 
     private AnalysisEngine.Input input(LandingSite site, Instant start, Instant end, int stepSeconds) {
         var dataset = site.getTerrainDataset();
-        var profile = samples.findByIdLandingSiteIdOrderByIdAzimuthIndex(site.getId());
-
-        if (profile.size() != 3600) {
-            throw new BusinessException(AnalysisErrorCode.INVALID_TERRAIN);
-        }
-
-        for (int i = 0; i < profile.size(); i++) {
-            var sample = profile.get(i);
-
-            if (sample.getId().getAzimuthIndex() != i || Math.abs(sample.getAzimuthDegrees() - i / 10.0) > 1e-8) {
-                throw new BusinessException(AnalysisErrorCode.INVALID_TERRAIN);
-            }
-        }
-
         return new AnalysisEngine.Input(site.getSiteCode(), site.getLatitudeDegrees(), site.getLongitudeDegrees(),
                 site.getSurfaceElevationMeters(), site.getObserverHeightAboveSurfaceMeters(), dataset.getCoordinateReferenceFrame(),
                 dataset.getReferenceSphereRadiusMeters(), dataset.isDistantTerrainVerified(), dataset.getDatasetSha256(),
-                profile.stream().map(sample -> sample.getTerrainHorizonDegrees()).toList(), start, end, stepSeconds);
+                horizon.elevations(site.getId()), start, end, stepSeconds);
     }
 
     private Prepared createRun(LandingSite site, AnalysisType type, AnalysisEngine.Input input,

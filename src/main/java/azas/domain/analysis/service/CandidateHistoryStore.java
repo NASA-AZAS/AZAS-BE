@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -46,11 +47,25 @@ public class CandidateHistoryStore {
                         (Double) rs.getObject("transfer_duration_hours"), rs.getString("solver_status"),
                         (Double) rs.getObject("position_residual_km"), rs.getString("model"), false,
                         List.of(JSON.readValue(rs.getString("reasons"), String[].class)),
-                        JSON.readValue(rs.getString("solver_details"), JSON.getTypeFactory().constructMapType(Map.class, String.class, Object.class))), run);
+                        solverDetails(rs.getString("solver_details"))), run);
+    }
+
+    private static Map<String, Object> solverDetails(String json) {
+        return json == null ? null : JSON.readValue(json, JSON.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
     }
 
     static Timestamp time(Instant value) { return value == null ? null : Timestamp.from(value); }
     static Instant instant(ResultSet rs, String column) throws SQLException {
         var value = rs.getTimestamp(column); return value == null ? null : value.toInstant();
+    }
+
+    record SurfacePeriod(Instant touchdown, Instant end) {}
+
+    Optional<SurfacePeriod> findPeriod(UUID run, String candidateId) {
+        return jdbc.query("""
+                select proposed_landing_at, surface_finished_at from surface_candidate_result
+                where analysis_run_id = ? and candidate_code = ?
+                """, (rs, row) -> new SurfacePeriod(instant(rs, "proposed_landing_at"), instant(rs, "surface_finished_at")),
+                run, candidateId).stream().findFirst();
     }
 }

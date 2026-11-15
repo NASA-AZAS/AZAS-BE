@@ -30,6 +30,14 @@ public class DateOpportunityEngine {
 
     public record Window(Instant startUtc, Instant endUtc, Instant supportEndUtc) {}
 
+    public static double terrainHorizonDegrees(List<Double> profile, double azimuth) {
+        double position = azimuth * 10;
+        int lower = (int) position;
+        double fraction = position - lower;
+        double left = profile.get(lower % 3600), right = profile.get((lower + 1) % 3600);
+        return fraction == 0 ? left : left * (1 - fraction) + right * fraction;
+    }
+
     public record Result(AnalysisEngine.Output visibility, List<Window> windows, String observerSha256, int sampleCount, List<TransferSearch.Candidate> candidates) {}
 
     public Result analyze(long siteId, AnalysisEngine.Input input, DateOpportunityRequest request) {
@@ -81,12 +89,7 @@ public class DateOpportunityEngine {
         }
 
         State localState(double azimuth, double elevation) {
-            double position = azimuth * 10;
-            int lower = (int) position;
-            double fraction = position - lower;
-            var profile = horizon.elevations();
-            double left = profile.get(lower % 3600), right = profile.get((lower + 1) % 3600);
-            double cutoff = fraction == 0 ? left : left * (1 - fraction) + right * fraction;
+            double cutoff = terrainHorizonDegrees(horizon.elevations(), azimuth);
             return elevation > cutoff ? State.VISIBLE : State.OCCULTED;
         }
 

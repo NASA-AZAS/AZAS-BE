@@ -19,7 +19,7 @@ public record DateOpportunityRequest(@NotBlank String missionDeadlineUtc, BigDec
         DepartureState departureState, ArrivalTargetRule arrivalTargetRule, Lambert lambert, NetworkMode networkMode,
         String searchStartUtc) implements StrictAnalysisOptions {
     public static final Instant SEARCH_START = Instant.parse("2027-01-01T00:00:00Z");
-    private static final Instant ARCHIVE_END = Instant.parse("2030-01-01T00:00:00Z");
+    public static final Instant ARCHIVE_END = Instant.parse("2030-01-01T00:00:00Z");
 
     public enum Criterion { ANY, VISIBLE, OCCULTED }
     public enum UnknownPolicy { RECORD_UNKNOWN, EXCLUDE_WITH_RECORD }

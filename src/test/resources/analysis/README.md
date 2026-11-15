@@ -1,5 +1,10 @@
 # LLSN regression fixtures
 
+`post_landing.json` is the team's unmodified Site01 reference (SHA-256 `ed93e2889c5024c3772092310be50fdc63c32fd91c577f82b3e8025a00903983`).
+`site01-observers-2027-2028.csv.gz` contains the header and all 105,264 rows for those two years from ver2
+`data/observer-2027-2029/Site01.csv`. The API test loads those observations independently of the expected JSON
+and uses the normal landing-screen terrain fixture. It compares the complete response payload, including all 289 samples.
+
 These are test-only extracts of the user-supplied `LLSN-Java21` bundle.
 They do not establish an independent scientific benchmark and are not used as a runtime cache.
 
