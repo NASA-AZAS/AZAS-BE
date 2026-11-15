@@ -11,6 +11,8 @@ import azas.domain.analysis.dto.AnalysisResponses;
 import azas.domain.analysis.dto.DateOpportunityRequest;
 import azas.domain.analysis.service.AnalysisJobs;
 import azas.domain.analysis.service.AnalysisQueryService;
+import azas.global.exception.BusinessException;
+import azas.global.exception.CommonErrorCode;
 import azas.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -21,6 +23,7 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.net.URI;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -57,7 +60,7 @@ public class AnalysisController {
     @PostMapping("/landing-sites/{id}/date-opportunities")
     @Operation(summary = "착륙 기회 분석 요청", description = """
             후보지 목록의 landingSiteId를 사용합니다. 2027-01-01부터 UTC 마감일까지 10분 간격의 관측값을 읽습니다.
-            날짜만 보내면 해당 날짜 23:59 UTC가 마감입니다. 기본 조건은 태양·지구 모두 VISIBLE, 활동 48시간, 후보 간격 10분, 최대 50개입니다.
+            날짜만 보내면 해당 날짜 23:59 UTC가 마감입니다. 기본 조건은 태양·지구 모두 VISIBLE, 활동 48시간, 관측자 높이 1m, 후보 간격 10분, 최대 50개입니다.
             timeStepMinutes(1~1440)는 후보 탐색 간격이며 maxCandidates(1~10000)는 평가할 개별 후보의 상한입니다.
             개별 후보의 전이를 평가하려면 departureState, arrivalTargetRule, transferDurationHours, preLandingDelayHours, lambert를 함께 보내세요.
             202 응답의 data.analysisRunId로 실행 상태를 조회한 뒤 SUCCEEDED이면 date-opportunities 결과를 조회하세요.
@@ -75,8 +78,17 @@ public class AnalysisController {
                     })))
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202", description = "분석 접수", useReturnTypeSchema = true)
     public ResponseEntity<ApiResponse<AnalysisResponses.Accepted>> createOpportunities(@PathVariable @Positive long id,
+            @Parameter(description = "달 표면 위 높이(m). 기준 높이와 다르면 기존 차폐점을 고정한 근사 지평선을 사용합니다.")
+            @RequestParam(defaultValue = "1") double observerHeightAboveSurfaceMeters,
+            @Parameter(description = "표면 활동 시간(h). 지정하면 본문의 값을 대체합니다. 둘 다 생략하면 48시간입니다.")
+            @RequestParam(required = false) BigDecimal surfaceDurationHours,
             @Valid @RequestBody DateOpportunityRequest request) {
-        return accepted(jobs.submitOpportunities(id, request));
+        var effective = request.withSurfaceOptions(surfaceDurationHours, observerHeightAboveSurfaceMeters);
+        if (!Double.isFinite(observerHeightAboveSurfaceMeters) || observerHeightAboveSurfaceMeters < 0
+                || !effective.isValidDuration()) {
+            throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+        }
+        return accepted(jobs.submitOpportunities(id, effective));
     }
 
     private ResponseEntity<ApiResponse<AnalysisResponses.Accepted>> accepted(UUID runId) {

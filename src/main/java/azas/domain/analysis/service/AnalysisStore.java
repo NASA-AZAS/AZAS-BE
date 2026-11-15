@@ -26,6 +26,7 @@ import azas.global.exception.BusinessException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -53,7 +54,7 @@ public class AnalysisStore {
     @Transactional
     public Prepared create(long siteId, AnalysisRequest request, AnalysisEngine.Identity identity) {
         LandingSite site = findSite(siteId);
-        var input = input(site, request.start(), request.endExclusive(), 3600);
+        var input = input(site, request.start(), request.endExclusive(), 3600, site.getObserverHeightAboveSurfaceMeters());
         String parameters = JSON.writeValueAsString(new java.util.TreeMap<>(Map.ofEntries(
                 Map.entry("startDate", request.startDate()), Map.entry("endDate", request.endDate()),
                 Map.entry("timezone", "UTC"), Map.entry("sampleIntervalMinutes", 60), Map.entry("siteCode", input.siteCode()),
@@ -66,11 +67,16 @@ public class AnalysisStore {
     @Transactional
     public Prepared createOpportunities(long siteId, DateOpportunityRequest request, AnalysisEngine.Identity identity) {
         LandingSite site = findSite(siteId);
-        var input = input(site, DateOpportunityRequest.SEARCH_START, request.deadline(), DateOpportunityEngine.STEP_SECONDS);
+        var input = input(site, DateOpportunityRequest.SEARCH_START, request.deadline(), DateOpportunityEngine.STEP_SECONDS,
+                request.observerHeightAboveSurfaceMeters());
         var parametersMap = new java.util.TreeMap<String, Object>();
         parametersMap.put("request", request);
         parametersMap.put("landingSiteId", siteId);
         parametersMap.put("terrainDatasetSha256", input.datasetSha256());
+        parametersMap.put("referenceObserverHeightAboveSurfaceMeters", site.getObserverHeightAboveSurfaceMeters());
+        if (input.observerHeight() != site.getObserverHeightAboveSurfaceMeters()) {
+            parametersMap.put("horizonModel", LandingSiteHorizon.FIXED_BLOCKER_MODEL);
+        }
         parametersMap.put("site", Map.ofEntries(Map.entry("siteCode", input.siteCode()),
                 Map.entry("latitudeDegrees", input.latitude()), Map.entry("longitudeDegrees", input.longitude()),
                 Map.entry("surfaceElevationMeters", input.surfaceElevation()), Map.entry("observerHeightAboveSurfaceMeters", input.observerHeight()),
@@ -83,12 +89,12 @@ public class AnalysisStore {
         return sites.findById(siteId).orElseThrow(() -> new BusinessException(AnalysisErrorCode.SITE_NOT_FOUND));
     }
 
-    private AnalysisEngine.Input input(LandingSite site, Instant start, Instant end, int stepSeconds) {
+    private AnalysisEngine.Input input(LandingSite site, Instant start, Instant end, int stepSeconds, double observerHeight) {
         var dataset = site.getTerrainDataset();
         return new AnalysisEngine.Input(site.getSiteCode(), site.getLatitudeDegrees(), site.getLongitudeDegrees(),
-                site.getSurfaceElevationMeters(), site.getObserverHeightAboveSurfaceMeters(), dataset.getCoordinateReferenceFrame(),
+                site.getSurfaceElevationMeters(), observerHeight, dataset.getCoordinateReferenceFrame(),
                 dataset.getReferenceSphereRadiusMeters(), dataset.isDistantTerrainVerified(), dataset.getDatasetSha256(),
-                horizon.elevations(site.getId()), start, end, stepSeconds);
+                horizon.elevations(site.getId(), observerHeight - site.getObserverHeightAboveSurfaceMeters()), start, end, stepSeconds);
     }
 
     private Prepared createRun(LandingSite site, AnalysisType type, AnalysisEngine.Input input,
@@ -181,7 +187,12 @@ public class AnalysisStore {
     private void finish(AnalysisRun run, AnalysisEngine.Output output, String provenance) {
         Instant now = Instant.now();
         if (run.expired(now)) throw new AnalysisEngineException("ANALYSIS_TIMEOUT", null);
-        run.complete(ResultStatus.valueOf(output.resultStatus()), provenance, output.diagnostics().toArray(String[]::new), now);
+        var diagnostics = new ArrayList<>(output.diagnostics());
+        if (run.getAnalysisType() == AnalysisType.DATE_OPPORTUNITIES
+                && LandingSiteHorizon.FIXED_BLOCKER_MODEL.equals(JSON.readTree(run.getAnalysisParameters()).path("horizonModel").asString(""))) {
+            diagnostics.add(LandingSiteHorizon.FIXED_BLOCKER_MODEL);
+        }
+        run.complete(ResultStatus.valueOf(output.resultStatus()), provenance, diagnostics.toArray(String[]::new), now);
     }
 
     private void saveDays(AnalysisRun run, AnalysisEngine.Output output) {

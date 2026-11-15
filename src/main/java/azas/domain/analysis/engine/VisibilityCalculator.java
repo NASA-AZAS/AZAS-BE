@@ -22,6 +22,12 @@ public final class VisibilityCalculator {
         }
     }
 
+    /** Apparent angle to the same terrain point after moving the observer along the local vertical. */
+    public static double fixedBlockerHorizonDegrees(double referenceDegrees, double horizontalMeters, double heightChangeMeters) {
+        double slope = Math.tan(Math.toRadians(referenceDegrees)) - heightChangeMeters / horizontalMeters;
+        return Math.toDegrees(Math.atan(slope));
+    }
+
     public record Horizon(List<Double> elevations) {
         public Horizon {
             elevations = List.copyOf(elevations);

@@ -1,6 +1,8 @@
 package azas.domain.analysis.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
@@ -17,7 +19,10 @@ public record DateOpportunityRequest(@NotBlank String missionDeadlineUtc, BigDec
         SurfaceCriteria surfaceCriteria, Integer timeStepMinutes, RefinementPolicy refinementPolicy,
         Integer maxCandidates, Range transferDurationHours, Range preLandingDelayHours, Range launchToTliDelayHours,
         DepartureState departureState, ArrivalTargetRule arrivalTargetRule, Lambert lambert, NetworkMode networkMode,
-        String searchStartUtc) implements StrictAnalysisOptions {
+        String searchStartUtc,
+        @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+        @Schema(description = "쿼리에서 지정한 달 표면 위 관측자 높이(m)", accessMode = Schema.AccessMode.READ_ONLY)
+        Double observerHeightAboveSurfaceMeters) implements StrictAnalysisOptions {
     public static final Instant SEARCH_START = Instant.parse("2027-01-01T00:00:00Z");
     public static final Instant ARCHIVE_END = Instant.parse("2030-01-01T00:00:00Z");
 
@@ -27,17 +32,25 @@ public record DateOpportunityRequest(@NotBlank String missionDeadlineUtc, BigDec
     public enum Branch { SHORT_WAY, LONG_WAY }
 
     public DateOpportunityRequest(String deadline, BigDecimal hours) {
-        this(deadline, hours, null, null, null, null, null, null, null, null, null, null, null, null);
+        this(deadline, hours, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     public DateOpportunityRequest {
         if (surfaceDurationHours == null) surfaceDurationHours = BigDecimal.valueOf(48);
+        if (observerHeightAboveSurfaceMeters == null) observerHeightAboveSurfaceMeters = 1.0;
         if (surfaceCriteria == null) surfaceCriteria = new SurfaceCriteria(Criterion.VISIBLE, Criterion.VISIBLE, UnknownPolicy.RECORD_UNKNOWN);
         if (timeStepMinutes == null) timeStepMinutes = 10;
         if (refinementPolicy == null) refinementPolicy = new RefinementPolicy(Math.min(10, timeStepMinutes), 0);
         if (maxCandidates == null) maxCandidates = 50;
         if (networkMode == null) networkMode = NetworkMode.ONLINE;
         if (searchStartUtc == null) searchStartUtc = SEARCH_START.toString();
+    }
+
+    public DateOpportunityRequest withSurfaceOptions(BigDecimal hours, double heightMeters) {
+        return new DateOpportunityRequest(missionDeadlineUtc, hours == null ? surfaceDurationHours : hours,
+                surfaceCriteria, timeStepMinutes, refinementPolicy, maxCandidates, transferDurationHours,
+                preLandingDelayHours, launchToTliDelayHours, departureState, arrivalTargetRule, lambert,
+                networkMode, searchStartUtc, heightMeters);
     }
 
     public record SurfaceCriteria(Criterion sun, Criterion earth, UnknownPolicy unknownPolicy) implements StrictAnalysisOptions {}
