@@ -79,6 +79,19 @@ Table horizon_sample {
   Note: '차폐 지형까지 접평면상 수평 거리와 마지막 유효 표본까지 구면상 호 거리를 구분한다.'
 }
 
+Table observer_sample {
+  landing_site_id bigint [not null]
+  observed_at timestamptz [not null, note: '10분 UTC 격자']
+  sun_azimuth_degrees "double precision" [not null]
+  sun_elevation_degrees "double precision" [not null]
+  earth_azimuth_degrees "double precision" [not null]
+  earth_elevation_degrees "double precision" [not null]
+  indexes {
+    (landing_site_id, observed_at) [pk]
+  }
+  Note: 'ver2 태양·지구 관측 입력. 각도의 단위는 도.'
+}
+
 Table analysis_run {
   analysis_run_id uuid [pk]
   landing_site_id bigint [not null]
@@ -190,6 +203,7 @@ Table landing_opportunity_result {
 
 Ref: landing_site.terrain_dataset_id > terrain_dataset.terrain_dataset_id [delete: restrict]
 Ref: horizon_sample.landing_site_id > landing_site.landing_site_id [delete: restrict]
+Ref: observer_sample.landing_site_id > landing_site.landing_site_id [delete: restrict]
 Ref: analysis_run.landing_site_id > landing_site.landing_site_id [delete: restrict]
 Ref: daily_analysis_result.analysis_run_id > analysis_run.analysis_run_id [delete: restrict]
 Ref: visibility_window.daily_analysis_result_id > daily_analysis_result.daily_analysis_result_id [delete: restrict]

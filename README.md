@@ -104,7 +104,7 @@ scripts/run-local.ps1   # 로컬 DB 시작과 환경변수 주입
 기능 코드는 `azas.domain.<기능명>` 아래에 추가합니다.
 공통 응답·예외 처리 사용법은 [API 개발 규칙](docs/api-conventions.md),
 JPA·Flyway 사용법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
-확정된 7개 테이블은 [DBML ERD](docs/erd.dbml), 후보지 27개·지평선 표본 97,200개의
+업무 테이블은 [DBML ERD](docs/erd.dbml), 후보지 27개·지평선 표본 97,200개의
 초기 적재와 조회 방법은 [지형 데이터 가이드](docs/terrain-data.md)에 정리되어 있습니다.
 후보지 조회·기간 분석 요청과 결과 조회는 [후보지·분석 API 가이드](docs/analysis-api.md)를 참고하세요.
 요청 ID와 텍스트/JSON 로그 설정은 [로깅 가이드](docs/logging.md)에 정리되어 있습니다.
