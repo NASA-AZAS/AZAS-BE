@@ -21,7 +21,7 @@ public record DateOpportunityRequest(@NotBlank String missionDeadlineUtc, BigDec
         DepartureState departureState, ArrivalTargetRule arrivalTargetRule, Lambert lambert, NetworkMode networkMode,
         String searchStartUtc,
         @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-        @Schema(description = "쿼리에서 지정한 달 표면 위 관측자 높이(m)", accessMode = Schema.AccessMode.READ_ONLY)
+        @Schema(description = "Viewing height in metres above the lunar surface, supplied as a query parameter.", accessMode = Schema.AccessMode.READ_ONLY)
         Double observerHeightAboveSurfaceMeters) implements StrictAnalysisOptions {
     public static final Instant SEARCH_START = Instant.parse("2027-01-01T00:00:00Z");
     public static final Instant ARCHIVE_END = Instant.parse("2030-01-01T00:00:00Z");
