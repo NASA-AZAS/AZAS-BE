@@ -53,14 +53,19 @@ public class PostLandingService {
             throw new BusinessException(AnalysisErrorCode.OBSERVER_DATA_INCOMPLETE);
         }
         var site = run.getLandingSite();
-        var horizon = horizons.elevations(site.getId());
+        var parameters = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters());
+        double referenceHeight = parameters.path("referenceObserverHeightAboveSurfaceMeters")
+                .asDouble(site.getObserverHeightAboveSurfaceMeters());
+        double observerHeight = parameters.path("site").path("observerHeightAboveSurfaceMeters").asDouble(referenceHeight);
+        var horizon = horizons.elevations(site.getId(), observerHeight - referenceHeight);
         var track = new SurfaceTrack(period, horizon);
         long start = period.touchdown().getEpochSecond() + (period.touchdown().getNano() == 0 ? 0 : 1);
         long first = start + Math.floorMod(-start, STEP_SECONDS);
         archive.scan(site.getId(), first, DateOpportunityRequest.ARCHIVE_END.getEpochSecond(), track::add);
         return new PostLandingResponse(site.getSiteCode(), period.touchdown(), period.end(), STEP_SECONDS,
                 new Occultations(track.earthOcculted, track.sunOcculted), meanVisibility(site.getId(), horizon),
-                "BODY_CENTER_LOCAL_TERRAIN", track.samples);
+                observerHeight == referenceHeight ? "BODY_CENTER_LOCAL_TERRAIN" : LandingSiteHorizon.FIXED_BLOCKER_MODEL,
+                track.samples);
     }
 
     private SurfacePeriod period(AnalysisRun run, String candidateId) {

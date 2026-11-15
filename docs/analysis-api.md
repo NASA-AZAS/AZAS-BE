@@ -75,6 +75,19 @@ POST는 HTTP 202와 상태 조회용 `Location` 헤더를 반환합니다.
 | `GET /api/v1/analyses/{runId}/date-opportunities` | 첫 접지 시각, 전체 접지 구간, 평가한 개별 후보(기본 상한 50개) |
 | `GET /api/v1/analyses/{runId}/daily-results` | 일별 태양·지구·공동 가시율 및 가시 구간. `?date=2027-01-19` 지원 |
 
+착륙 기회 분석의 기본값은 관측자 높이 **1m**, 표면 활동 시간 **48시간**입니다. 예를 들어 아래 요청은 높이 2.5m에서 24시간 연속으로 조건이 맞는 접지 구간을 찾습니다.
+
+```http
+POST /api/v1/landing-sites/19/date-opportunities?observerHeightAboveSurfaceMeters=2.5&surfaceDurationHours=24
+Content-Type: application/json
+
+{"missionDeadlineUtc":"2027-01-31"}
+```
+
+높이는 0 이상의 유한한 미터 값입니다. 활동 시간은 쿼리 값을 우선하며, 쿼리에서 생략하면 기존 JSON 본문의 `surfaceDurationHours`를 사용합니다. 둘 다 생략하면 48시간입니다.
+
+관측 높이가 지형 데이터의 기준 높이와 다르면 각 방위각에서 기존 차폐점까지의 수평 거리로 지평선 고도각을 보정합니다. 이 근사는 차폐점과 아카이브의 태양·지구 관측각을 고정하므로, 다른 지형점이 새 지평선을 결정하는 효과와 관측 높이에 따른 천체 시차는 반영하지 않습니다. 실행 결과의 `diagnostics`와 착륙 후 조회의 `model`에 `FIXED_BLOCKER_HEIGHT_APPROXIMATION`을 표시합니다.
+
 ```json
 {
   "missionDeadlineUtc": "2027-01-31",

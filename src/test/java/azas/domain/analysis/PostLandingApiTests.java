@@ -89,6 +89,28 @@ class PostLandingApiTests extends PostgresIntegrationTest {
     }
 
     @Test
+    void usesTheSavedObserverHeightForTheSkyTrackAndDailyMeans() throws Exception {
+        long site = site("Site01");
+        jdbc.update("""
+                insert into observer_sample select ?, t, 0, 7.24, 0, 7.24
+                from generate_series('2027-01-01T00:00Z'::timestamptz, '2028-12-31T23:50Z', interval '10 minutes') t
+                """, site);
+        jdbc.update("insert into observer_sample values (?, '2030-01-01T00:00Z', 0, 7.24, 0, 7.24)", site);
+        UUID run = run(site, "DATE_OPPORTUNITIES", "SUCCEEDED", true);
+        jdbc.update("""
+                update analysis_run set analysis_parameters = '{"request":{},"referenceObserverHeightAboveSurfaceMeters":1,
+                    "site":{"observerHeightAboveSurfaceMeters":2}}'::jsonb where analysis_run_id = ?
+                """, run);
+        var id = candidate(run, "2029-12-31T23:59:00Z", "2030-01-01T00:00:00Z");
+        var result = data(PATH, run, id);
+        assertThat(result.path("model").asString()).isEqualTo("FIXED_BLOCKER_HEIGHT_APPROXIMATION");
+        var sample = result.path("samples").get(0);
+        assertThat(sample.path("sun").path("terrainHorizonDeg").asDouble()).isBetween(7.232, 7.235);
+        assertThat(sample.path("jointVisible").asBoolean()).isTrue();
+        assertThat(result.path("meanDailyVisibility").path("sunMeanDailyVisiblePct").asDouble()).isEqualTo(100);
+    }
+
+    @Test
     void rejectsWrongParentAndUnavailableOrIncompleteInputs() throws Exception {
         long site = site("Site01");
         UUID run = run(site, "DATE_OPPORTUNITIES", "SUCCEEDED", true);
