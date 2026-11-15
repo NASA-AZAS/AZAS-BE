@@ -16,9 +16,11 @@ public class WebConfig implements WebMvcConfigurer {
     public WebConfig(AzasProperties properties, JsonMapper jsonMapper) {
         // Keep the existing AZAS_CORS_ORIGINS JSON-array format on EC2.
         corsOrigins = jsonMapper.readValue(properties.corsOrigins(), String[].class);
+
         if (corsOrigins == null) {
             throw new IllegalArgumentException("AZAS_CORS_ORIGINS must be a JSON array of origins");
         }
+
         for (String origin : corsOrigins) {
             if (origin == null || origin.isBlank()) {
                 throw new IllegalArgumentException("CORS origins must not be blank");

@@ -111,9 +111,11 @@ class TerrainPersistenceTests extends PostgresIntegrationTest {
                 .schemas(schema).locations("classpath:db/migration").target("1").load().migrate();
         var input = LandingScreenDatasetV1.load();
         input.sites().getFirst().samples()[1000][1] = Double.NaN;
+
         try (Connection connection = flyway.getConfiguration().getDataSource().getConnection()) {
             connection.setSchema(schema);
             connection.setAutoCommit(false);
+
             try {
                 assertThatThrownBy(() -> LandingScreenV1Importer.importInto(connection, input))
                         .isInstanceOf(SQLException.class);
@@ -122,6 +124,7 @@ class TerrainPersistenceTests extends PostgresIntegrationTest {
                 connection.setSchema("public");
             }
         }
+
         for (String table : new String[] {"terrain_dataset", "landing_site", "horizon_sample"}) {
             assertThat(jdbc.queryForObject("select count(*) from " + schema + "." + table, Integer.class)).isZero();
         }
@@ -132,12 +135,14 @@ class TerrainPersistenceTests extends PostgresIntegrationTest {
         assertThatThrownBy(() -> transactions.executeWithoutResult(status -> jdbc.update("""
                 insert into horizon_sample select * from horizon_sample limit 1
                 """))).isInstanceOf(DataIntegrityViolationException.class);
+
         for (String value : new String[] {"NaN", "Infinity", "-Infinity"}) {
             assertThatThrownBy(() -> transactions.executeWithoutResult(status -> jdbc.update("""
                     update horizon_sample set terrain_horizon_degrees = cast(? as double precision)
                     where landing_site_id = (select min(landing_site_id) from landing_site) and azimuth_index = 0
                     """, value))).isInstanceOf(DataIntegrityViolationException.class);
         }
+
         assertThat(samples.count()).isEqualTo(97200);
     }
 }

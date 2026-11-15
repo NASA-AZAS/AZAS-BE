@@ -15,17 +15,20 @@ public abstract class PostgresIntegrationTest {
 
     private static PostgreSQLContainer createDatabase() {
         Properties properties = new Properties();
+
         try (var input = Files.newInputStream(Path.of("docker/postgres.env"))) {
             properties.load(input);
         } catch (IOException exception) {
             throw new IllegalStateException("Could not load the pinned PostgreSQL image", exception);
         }
+
         DockerImageName image = DockerImageName.parse(properties.getProperty("POSTGRES_IMAGE"))
                 .asCompatibleSubstituteFor("postgres");
         PostgreSQLContainer postgres = new PostgreSQLContainer(image);
         postgres.withDatabaseName("azas_test").withUsername("azas_test").withPassword("test_only_password");
         // A single container per test JVM; Testcontainers cleans it up at JVM exit.
         postgres.start();
+
         return postgres;
     }
 
