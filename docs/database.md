@@ -56,10 +56,14 @@ docker compose --env-file docker/postgres.env --file compose.local.yaml down
 
 ## 스키마 변경
 
-Flyway는 앱 시작 시 `src/main/resources/db/migration/V<번호>__<설명>.sql`을 순서대로 적용합니다.
-첫 업무 테이블은 `V1__...sql`과 Entity를 함께 추가하세요. 아직 운영용 업무 SQL은 없습니다.
+Flyway는 앱 시작 시 SQL과 Java 마이그레이션을 버전 순서대로 적용합니다.
+`V1__create_terrain_and_analysis_tables.sql`은 확정 ERD의 7개 테이블을 생성하고,
+Java 마이그레이션 `V2__import_landing_screen_v1`은 번들 CSV를 검증해 최초 한 번 적재합니다.
+Java 마이그레이션은 `src/main/java/db/migration/`, SQL은 `src/main/resources/db/migration/`에 있습니다.
+데이터 출처·행 수·버전 갱신 정책은 [지형 데이터 가이드](terrain-data.md)를 참고하세요.
 JPA는 `ddl-auto: validate`, `open-in-view: false`이며 스키마 생성·변경은 Flyway가 담당합니다.
-Flyway clean은 비활성화하고 기존 SQL 체크섬을 검증합니다. 적용한 파일은 수정하지 말고 새 버전을 추가하세요.
+Flyway clean은 비활성화하고 기존 SQL과 V2 데이터 번들의 체크섬을 검증합니다.
+적용한 SQL·Java 적재 코드·번들 파일은 수정하지 말고 새 버전을 추가하세요.
 
 후보 앱이 시작할 때도 운영 migration이 실행되므로 기존 앱과 호환되는 변경부터 적용해야 합니다.
 이미지 롤백은 SQL을 되돌리지 않습니다. 컬럼 추가 등 호환되는 변경과 데이터 이관을 먼저 진행하고,
@@ -73,6 +77,8 @@ Flyway clean은 비활성화하고 기존 SQL 체크섬을 검증합니다. 적�
 
 Docker가 실행 중이면 Testcontainers가 별도 DB를 만듭니다. 로컬 개발 DB와 `.env`는 테스트에 사용하지 않습니다.
 실제 PostgreSQL에서 JPA 저장·조회, Flyway 검증·중복 적용 방지와 실패 SQL의 트랜잭션 롤백을 검사합니다.
+CSV 전체 행의 SHA-256·좌표계·유한성·방위각 격자를 검사하고, 배치 적재 도중 실패 시 전체 롤백도 검증합니다.
+분석 모델은 PostgreSQL enum·JSONB·배열·UTC 시각과 미산출 `NULL`을 실제 저장·조회합니다.
 테스트 엔티티와 SQL은 실행 JAR에 포함되지 않습니다.
 
 Hikari 풀은 최대 3개, minimum idle 0입니다. `/health`는 프로세스 응답,

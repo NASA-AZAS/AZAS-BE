@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "1.0",
+  "datasetId": "landing-screen",
+  "inputType": "HORIZON_CSV",
+  "metadataStatus": "READY",
+  "producer": "Project Java LunarHorizonRefresh.java; SHA256 aa5cfe16c9a1f6178cf08b54b6d7280a1bd07d26968fa7fa822ca841e0759485; Eclipse Temurin OpenJDK 25.0.5+8 LTS (producer declaration)",
+  "parentProducts": "NASA PGDA 78 <site>_final_adj_5mpp_surf.tif; PGDA 90 LDEM_80S_20MPP_ADJ.TIF",
+  "coordinateSystem": "MOON_ME_DE421_PLANETOCENTRIC_EAST",
+  "verticalDatum": "ELEVATION_M_ABOVE_1737400_M_SPHERE",
+  "surfaceElevationMeaning": "elevation_5m_m_IS_SURFACE_ELEVATION",
+  "azimuthConvention": "NORTH_CLOCKWISE_DEGREES",
+  "elevationConvention": "LOCAL_HORIZONTAL_DEGREES",
+  "noDataPolicy": "ALL_ROWS_VALID",
+  "qualityDescription": "Producer: 5 m local / 20 m regional bilinear DEM sampling; regional fallback for invalid local samples, termination at invalid regional samples. Finite NoData sentinels are not interpreted. No global closure or independent DEM/code verification.",
+  "interpolationPolicy": "LINEAR_NO_SMOOTHING",
+  "distantTerrainVerified": false,
+  "sites": [
+    {
+      "siteId": "DM1",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "DM2",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Haworth",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM1",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM2",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM3",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM4",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM5",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM6",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM7",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "LM8",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "NPA",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "NPB",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "NPC",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "NPD",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "SL2",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "SL3",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Shoemaker",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site01",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site04",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site06",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site07",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site11",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site20",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site20v2",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site23",
+      "observerHeightAboveSurfaceM": 1
+    },
+    {
+      "siteId": "Site42",
+      "observerHeightAboveSurfaceM": 1
+    }
+  ],
+  "notes": [
+    "Scientific conventions confirmed by supplied HORIZON_METADATA.md on 2026-11-14; producer declarations, not independent certification.",
+    "Great-circle rays, spherical curvature; 5 m local and 20 m regional steps; radialStepM in result is null because no single step describes this input.",
+    "Search upper limit 1000000 m; actual per-direction termination distances retained.",
+    "blocker_horizontal_distance_m is tangent-plane distance; searched_ground_distance_m is spherical arc distance; not interchangeable.",
+    "screened means producer slope/size screening only, not engine-certified landing safety.",
+    "Linear angular interpolation is an explicit consumer policy; no smoothing and no extrapolation across missing values."
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "productId": "landing-screen",
+  "sourceId": "SRC-IMPORTED",
+  "inputType": "HORIZON_CSV",
+  "metadataPath": "data/imported/landing-screen/metadata.json",
+  "files": [
+    {
+      "path": "data/imported/landing-screen/candidates.csv",
+      "sha256": "70032d91dafd1bdb7f4813b98e2a5c3215ad405ad191d7b701673c1ab05c51a4",
+      "bytes": 1443,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/DM1_horizon.csv",
+      "sha256": "27020742df137f8c725faeef23db89f9a4f535cbd7784b6feb87ffdd0ce4415f",
+      "bytes": 110900,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/DM2_horizon.csv",
+      "sha256": "cd5ae3d5c713a0f661e49a596dd45bf7ae09454811d7ce6f9fcc3d3c566d007b",
+      "bytes": 107440,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Haworth_horizon.csv",
+      "sha256": "c047f681ea04fcd6fbb803a5af0e1f21cd67f204103559cb88c13a15ee48ce04",
+      "bytes": 109225,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM1_horizon.csv",
+      "sha256": "5d4d706e2d31597bd53048612a16015ece439206d459b16044fcd7c48958fc58",
+      "bytes": 109378,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM2_horizon.csv",
+      "sha256": "9105e383923aad9a71e1d31184270d729c1d1ebf4ef545a53c90b01cdcf5813b",
+      "bytes": 109452,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM3_horizon.csv",
+      "sha256": "7d1d7a2ab76986bbcb7594e2cf908098a48a040955bd633e7addc4074da37051",
+      "bytes": 108306,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM4_horizon.csv",
+      "sha256": "6f1b638820b578b438f954514e6c2e0baa6ec58e55b536093a30d2426538059f",
+      "bytes": 108866,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM5_horizon.csv",
+      "sha256": "1f87a53f422ef3b707048d7ddca5509ec1f4ba9eff8985abcb88e01ed4e09588",
+      "bytes": 108616,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM6_horizon.csv",
+      "sha256": "b0d66cc6d6eea915609394bf06003981a879e79798b287fa48a50d500528e048",
+      "bytes": 109507,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM7_horizon.csv",
+      "sha256": "beac820a830327b1faca1c1d5042b8bc2137617d25906cc1c56c81d84b58184d",
+      "bytes": 107225,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/LM8_horizon.csv",
+      "sha256": "5d7ff999e688578962f07a89359f546fc47d54314fce7930368064962740ef03",
+      "bytes": 107968,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/NPA_horizon.csv",
+      "sha256": "ecacc497a129cb4dc7c04562e6d9eb16bc55b1495426f41b964624aec44c898c",
+      "bytes": 108628,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/NPB_horizon.csv",
+      "sha256": "286235ae8b755e36f27f6f08a0a543efadb4ba6fcdaa35e65646d225a4193df7",
+      "bytes": 110380,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/NPC_horizon.csv",
+      "sha256": "37e7e979d0ddc010149d1da604baed2141ce41409a95813ed3bff1ab2dc6ba0f",
+      "bytes": 108185,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/NPD_horizon.csv",
+      "sha256": "13b9d952b82b8d4e720f53acb5280a22642c0396896932b2e50dd93c1df6a865",
+      "bytes": 111453,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Shoemaker_horizon.csv",
+      "sha256": "c492a836b6fd38ae6b07dc490e60dd44f244ee8e5c97417964477824c4cb9bac",
+      "bytes": 108107,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site01_horizon.csv",
+      "sha256": "762072ad9d790c94eb71ab4b9054f74bb2b767d6064d6e66cb1fd9d664df5d0e",
+      "bytes": 107311,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site01_mmgis.geojson",
+      "sha256": "d195e1754e601e4f837906989521534e461902981b50124b81557ce2bd39bad7",
+      "bytes": 374,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site04_horizon.csv",
+      "sha256": "17e4971ff25b69a1064510bccadae5c6b9e63c69f4da44441dd40dd49c2bd6f1",
+      "bytes": 107521,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site06_horizon.csv",
+      "sha256": "5b7db3d7f2e8fe6e85d2093ff137999f44120631720e2541f17837510bd1d2ac",
+      "bytes": 105829,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site07_horizon.csv",
+      "sha256": "ea7f58b74218789c40588a578421c728788855ee21b7aa08cdba43685c37ed1f",
+      "bytes": 106514,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site11_horizon.csv",
+      "sha256": "a1f4d65bf362f60a34b42141c02800433b809d0248b13e7eb1205136fee277b3",
+      "bytes": 106163,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site20_horizon.csv",
+      "sha256": "ed11256627e031c803fee76f68ca45ff20dfff5967425a085f4d67fb01807113",
+      "bytes": 107251,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site20v2_horizon.csv",
+      "sha256": "d9143ae6bca2bfc1e493fe596cb265f3334b8157241607698b45e658213f47b8",
+      "bytes": 106958,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site23_horizon.csv",
+      "sha256": "ecb2df6cfea0e62a50c8e3c16fe8af2e63280536a9ff387aa3d5e34d73c140a0",
+      "bytes": 103397,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/Site42_horizon.csv",
+      "sha256": "b8f8a83bd8e33f4d8c9eca3be60c508e8a616a01318dcd3b48d36e08cac58e9f",
+      "bytes": 106548,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/SL2_horizon.csv",
+      "sha256": "23d0f7abe772a7c6159eae58c35bc3af197fe5bff45852796162c8895309d982",
+      "bytes": 108028,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/SL3_horizon.csv",
+      "sha256": "b9df04d5661cc98a3fe9cc6c80fafd25ecfeeea9a61e807a73196be04346bbef",
+      "bytes": 110451,
+      "url": ""
+    },
+    {
+      "path": "data/imported/landing-screen/HORIZON_METADATA.md",
+      "sha256": "190ece115f3a27f9c2a1dd9bf04978217c08709a8afa64aeacb4de2283fb6b3b",
+      "bytes": 7158,
+      "url": ""
+    }
+  ],
+  "rowsPerProfile": 3600,
+  "profileCount": 27,
+  "metadataWarning": "Producer-declared frame, datum and methods; original DEM and generating Java sources not independently validated. Finite NoData sentinels not interpreted; distant terrain unverified."
+}
