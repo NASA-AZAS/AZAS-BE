@@ -1,5 +1,6 @@
 package azas.domain.landingsite.controller;
 
+import azas.domain.landingsite.dto.LandingSiteDetailResponse;
 import azas.domain.landingsite.dto.LandingSiteResponse;
 import azas.domain.landingsite.service.LandingSiteService;
 import azas.global.response.ApiResponse;
@@ -28,7 +29,7 @@ public class LandingSiteController {
 
     @GetMapping("/{id}")
     @Operation(summary = "후보지 상세 조회")
-    public ApiResponse<LandingSiteResponse> get(@PathVariable @Positive long id) {
+    public ApiResponse<LandingSiteDetailResponse> get(@PathVariable @Positive long id) {
         return ApiResponse.success(service.get(id));
     }
 }
