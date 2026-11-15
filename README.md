@@ -1,144 +1,75 @@
 # AZAS Backend
 
-NASA Space Apps의 Lunar Landing Site Navigator API입니다. Java 21, Spring Boot 4.1.2,
-Gradle Wrapper 9.8.2를 사용합니다. 협업 규칙은
-[조직 기여 가이드](https://github.com/NASA-AZAS/.github/blob/main/CONTRIBUTING.md)를 참고하세요.
+[운영 Swagger UI](https://api.azas.n-e.kr/docs) · [LAMP 서비스](https://azas-app.vercel.app/)
 
-작업 브랜치는 최신 `dev`에서 분기하고 PR도 `dev`를 대상으로 엽니다.
-`dev` 대상 PR은 CI 검사를 수행하며, `dev` 병합만으로 운영 배포하지 않습니다.
-운영 반영이 필요할 때 `dev → main` PR로 릴리스합니다. `main`의 자동·수동 배포 흐름은 유지합니다.
+LAMP(Lunar Access and Mission Planning)는 달 남극 후보지 27곳 중 한 곳과 임무 마감일을 선택하면 착륙 가능한 시간을 찾아주는 서비스입니다. 이 백엔드는 접지 가능 구간, 지구 발사장별 일정, 예비 달 전이 궤적과 착륙 후 하늘 데이터를 제공합니다.
 
-## 로컬 실행
+## 구현 범위와 분석 기준
 
-Docker Desktop과 Compose 2.24 이상을 준비하고 저장소 루트에서 실행하면 PostgreSQL과 Spring을 함께 띄웁니다.
+- **접지 가능 구간** — 2027년 1월 1일 UTC부터 사용자가 지정한 마감 시각까지 10분 간격으로 태양과 지구의 고도를 해당 방위각의 지형 지평선과 비교합니다. 기본 조건은 지표 위 1m에서 두 천체가 모두 지평선보다 높은 상태로 48시간 연속 활동할 수 있는 것입니다. `earliestTouchdownUtc`는 이 조건을 만족하는 첫 구간의 시작입니다.
+- **발사와 전이** — 첫 접지 시각에서 역산해 지구 발사장별 발사, 달 전이 진입(TLI), 달 도착, 접지 시각을 UTC로 제공합니다. 발사 후보를 선택하면 JPL Horizons의 지구·달 위치를 이용해 TLI부터 달 도착까지의 예비 궤적을 계산합니다.
+- **착륙 후 하늘** — 선택한 접지 후보의 활동 시간 동안 태양과 지구의 방위각·고도각과 지형 차폐 여부를 제공합니다. 후보지 상세의 미리보기와 착륙 후 응답은 같은 기준으로 2027~2028년의 UTC 일별 가시율을 평균합니다.
+
+## 데이터 모델 (ERD)
+
+```mermaid
+erDiagram
+    terrain_dataset ||--o{ landing_site : contains
+    landing_site ||--o{ horizon_sample : has
+    landing_site ||--o{ observer_sample : has
+    landing_site ||--o{ analysis_run : has
+    analysis_run ||--o{ daily_analysis_result : summarizes
+    daily_analysis_result ||--o{ visibility_window : contains
+    analysis_run ||--o{ landing_opportunity_result : finds
+    analysis_run ||--o{ surface_candidate_result : evaluates
+    analysis_run ||--o| launch_option_batch : produces
+    launch_option_batch ||--o{ launch_option_result : contains
+    launch_option_result ||--o{ trajectory_run : has
+    analysis_run ||--o{ trajectory_run : records
+    trajectory_run ||--o{ trajectory_sample : contains
+    launch_site {
+        bigint launch_site_id PK
+    }
+```
+
+`analysis_run`은 달 후보지 하나에 대한 분석 실행입니다. `launch_site`는 지구 발사장 기준표이며, 발사 후보를 저장할 때 해당 발사장의 코드와 좌표를 결과에 복사합니다. [전체 컬럼과 키 정의](docs/erd.dbml)
+
+## 로컬 실행과 초기 데이터 적재
+
+저장소 루트에서 Docker Compose 2.24 이상으로 Spring Boot(Java 21)와 PostgreSQL 17을 시작합니다.
 
 ```powershell
 docker compose --env-file docker/postgres.env --file compose.local.yaml up --build --detach --wait --wait-timeout 180
 ```
 
-Spring이 시작되면 Flyway가 테이블만 생성합니다. 새 DB에는 [DataGrip 업로드 안내](docs/terrain-data.md)에 따라
-후보지 27개·지평선 표본 97,200개를 직접 넣으세요. 이미 적재된 DB는 그대로 사용합니다.
-DataGrip에서는 아래 값으로 PostgreSQL에 연결하세요.
+기본 설정으로 API는 `127.0.0.1:8000`, DB는 `127.0.0.1:55432`에서 열립니다. 프론트엔드의 로컬 주소를 추가할 때는 `.env.example`을 참고해 `.env`의 `AZAS_CORS_ORIGINS`에 허용할 주소를 JSON 배열로 지정하세요. [로컬 Swagger UI](http://127.0.0.1:8000/docs) · [DB 연결 설정](docs/database.md)
 
-| 항목 | 값 |
+Flyway가 빈 DB에 스키마를 생성하면 사용할 기능에 따라 데이터를 적재합니다.
+
+| 기능 | 새 DB에 필요한 데이터 |
 | --- | --- |
-| Host / Port | `localhost` / `55432` |
-| Database | `azas` |
-| User / Password | `azas_local` / `azas_local_only` |
-| JDBC URL | `jdbc:postgresql://localhost:55432/azas?sslmode=disable` |
+| 후보지 조회 | DataGrip에서 지형 데이터셋 → 후보지 → 지평선 표본 순으로 CSV 세 개를 가져온 뒤 `after-import.sql`을 실행합니다. 예상 결과는 데이터셋 1개, 후보지 27개, 지평선 표본 97,200개입니다. [CSV와 적재 순서](docs/terrain-data.md#새-db에-업로드) |
+| 접지 시각·가시율 분석 | 별도 원본 `LLSN-Java21-ver2`의 `observer-2027-2029`에서 분석할 후보지의 CSV를 가져옵니다. 파일 이름의 후보지 코드를 `landing_site_id`와 매칭하고, UTC 시각과 태양·지구 관측각을 `observer_sample`에 넣습니다. |
+| 발사 일정·궤적 | 같은 원본의 `experiments/launch_sites.csv`를 `launch_site`에 적재합니다. 원본 행 순서가 발사장 ID 1~13에 대응합니다. [컬럼 매핑](docs/database.md#스키마-변경) |
 
-Spring 로그는 `docker compose --env-file docker/postgres.env --file compose.local.yaml logs --follow api`로 확인합니다.
-상세 실행·DataGrip 조회 방법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
+## API 사용 흐름
 
-### IDE에서 Spring 실행
+아래 경로의 공통 접두사는 `/api/v1`입니다. 한 번 접수한 `runId`로 접지 결과부터 궤적까지 조회합니다.
 
-JDK 21로 Spring을 직접 실행하려면 아래 스크립트를 사용합니다. Compose로 실행한 `api`가 있다면 먼저
-`docker compose --env-file docker/postgres.env --file compose.local.yaml stop api`로 중지하세요.
+| 단계 | 요청 | 응답에서 사용할 값 |
+| --- | --- | --- |
+| 후보지 선택 | `GET /landing-sites` · `GET /landing-sites/{id}` | 목록의 `landingSiteId`가 `{id}`입니다. 상세의 `meanDailyVisibility`에서 태양·지구 평균 가시율을 읽습니다. |
+| 분석 접수 | `POST /landing-sites/{id}/date-opportunities` | 본문에 `{"missionDeadlineUtc":"2027-01-31"}`처럼 마감일을 보냅니다. HTTP 202 응답의 `data.analysisRunId`가 `{runId}`입니다. |
+| 접지 구간 확인 | `GET /analyses/{runId}` · `GET /analyses/{runId}/date-opportunities` | `executionStatus`가 `SUCCEEDED`이면 `windows`와 `earliestTouchdownUtc`를 확인합니다. 만족 구간이 없으면 첫 접지 시각은 `null`입니다. |
+| 하늘·타임라인 조회 | `GET /analyses/{runId}/surface-candidates/{candidateId}/post-landing` · `GET /analyses/{runId}/daily-results` | 첫 접지에서 본 하늘은 접지 결과의 `candidates`에서 `proposedLandingUtc`가 첫 접지 시각인 후보의 `candidateId`로 조회합니다. 일별 결과는 `?date=YYYY-MM-DD`로 선택할 수 있습니다. |
+| 발사장 선택 | `GET /analyses/{runId}/launch-options` | `launchSites`에서 발사장을 고르고 그 안의 `candidates`에서 `candidateId`와 네 단계의 UTC 일정을 읽습니다. 발사장에 따라 후보가 없을 수 있습니다. |
+| 궤적 계산·재조회 | `POST /analyses/{runId}/launch-options/{candidateId}/trajectory` · `GET /analyses/{runId}/trajectories/{trajectoryId}` | 선택한 **발사 후보** ID로 계산한 뒤 `trajectoryRunId`를 저장합니다. 같은 궤적을 다시 열 때는 그 ID로 GET을 호출합니다. |
 
-```powershell
-if (!(Test-Path .env)) { Copy-Item .env.example .env }
-.\scripts\run-local.ps1
-```
+요청 옵션, 응답 필드, 실패 코드는 [분석 API 가이드](docs/analysis-api.md)에서 확인할 수 있습니다.
 
-스크립트는 루트의 `compose.local.yaml`로 PostgreSQL을 시작하고 Spring을 실행합니다.
-환경변수는 기존 프로세스 값 → `.env` → `.env.example` 순서로 우선 적용합니다.
-별도 DB 연결 변수를 설정했다면 `-SkipDatabase`를 사용할 수 있습니다.
-Spring 자체와 IDE 직접 실행은 `.env`를 자동으로 읽지 않으므로 실행 설정에 변수를 등록하세요.
-Linux/macOS와 IntelliJ 실행 방법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
+## 검증 방법과 알려진 한계
 
-- Swagger UI: http://127.0.0.1:8000/docs
-- OpenAPI: http://127.0.0.1:8000/openapi.json
-- 프로세스 응답: http://127.0.0.1:8000/health → `{"status":"ok"}`
-- DB 포함 readiness: http://127.0.0.1:8000/actuator/health/readiness → `{"status":"UP"}`
-
-DB만 실행하려면 서비스명을 지정합니다. 전체 스택은 `down`으로 중지합니다.
-
-```powershell
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
-docker compose --env-file docker/postgres.env --file compose.local.yaml down
-```
-
-DB는 `127.0.0.1:55432`, 데이터베이스 `azas`, 계정 `azas_local` / `azas_local_only`입니다.
-Compose 프로젝트명 `azas-local`과 볼륨 `azas-local_postgres-data`를 유지해 기존 로컬 데이터를
-계속 사용합니다. `down`으로 중지해도 데이터는 남습니다.
-
-## 빌드와 테스트
-
-```powershell
-.\gradlew.bat --no-daemon check bootJar
-```
-
-테스트는 Testcontainers로 별도 PostgreSQL을 자동 실행하므로 Docker가 켜져 있어야 합니다.
-실행 JAR은 `build/libs/azas-api.jar`에 생성되며 직접 실행할 때도 DB 연결 환경변수가 필요합니다.
-의존성은 `build.gradle`, 고정 버전은 `gradle.lockfile`로 관리합니다.
-의존성을 변경하면 `check bootJar --write-locks`로 검증하고 잠금 파일을 함께 커밋하세요.
-
-## 구조와 환경 설정
-
-Gradle group과 프로젝트명은 `azas`이며, Java 기본 패키지도 `azas`를 사용합니다.
-
-```text
-src/main/java/azas/
-  AzasApplication.java
-  domain/
-    landingsite/        # 후보지 조회 API·지형 데이터
-    analysis/           # 기간 분석 API·분석 코드 연결·결과 저장
-  global/
-    config/             # CORS, OpenAPI, 앱 설정
-    health/             # /health
-    response/           # ApiResponse, ValidationError
-    exception/          # ErrorCode, BusinessException, 전역 처리
-src/main/resources/
-  application.yaml
-  db/migration/         # Flyway 업무 SQL
-src/main/java/db/migration/ # 기존 V2 이력 호환용 빈 마이그레이션
-data/import/            # DataGrip 수동 업로드용 CSV, 앱 이미지에서 제외
-src/test/               # 실제 PostgreSQL 기반 통합 테스트
-compose.local.yaml      # 로컬 PostgreSQL·Spring
-docker/postgres.env     # 로컬·CI PostgreSQL 이미지 digest
-docker/certs/           # 앱 이미지의 공개 RDS CA
-scripts/run-local.ps1   # 로컬 DB 시작과 환경변수 주입
-.github/workflows/ci.yml
-```
-
-기능 코드는 `azas.domain.<기능명>` 아래에 추가합니다.
-공통 응답·예외 처리 사용법은 [API 개발 규칙](docs/api-conventions.md),
-JPA·Flyway 사용법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
-업무 테이블은 [DBML ERD](docs/erd.dbml), 후보지 27개·지평선 표본 97,200개의
-초기 적재와 조회 방법은 [지형 데이터 가이드](docs/terrain-data.md)에 정리되어 있습니다.
-후보지 조회·기간 분석 요청과 결과 조회는 [후보지·분석 API 가이드](docs/analysis-api.md)를 참고하세요.
-요청 ID와 텍스트/JSON 로그 설정은 [로깅 가이드](docs/logging.md)에 정리되어 있습니다.
-앱 설정은 `application.yaml`, `AZAS_`와 `SPRING_DATASOURCE_` 환경변수를 사용합니다.
-`AZAS_CORS_ORIGINS`는 JSON 배열이며 기본값은 빈 목록입니다.
-
-## 앱 Docker 이미지
-
-Docker Desktop에서 로컬 PostgreSQL을 시작한 뒤 실행합니다.
-
-```powershell
-if (!(Test-Path .env)) { Copy-Item .env.example .env }
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
-docker build -t azas-api .
-docker run --rm --memory 384m --cpus 1 -p 127.0.0.1:8000:8000 --env-file .env --env 'SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:55432/azas?sslmode=disable' azas-api
-```
-
-Linux에서는 앱과 DB가 연결 가능한 Docker 네트워크의 DB 주소를 사용하세요.
-JDK 단계에서 JAR을 만들고 JRE 이미지의 UID 10001로 실행합니다.
-JVM 힙 기본값은 128MB, 컨테이너 메모리 제한은 384MB이며 healthcheck는 DB readiness를 사용합니다.
-앱 이미지에는 RDS TLS 검증에 필요한 공개 CA를 포함합니다.
-
-## CI/CD와 운영 설정
-
-[GitHub Actions](https://github.com/NASA-AZAS/AZAS-BE/actions)는 Java·PostgreSQL 통합 테스트,
-로컬 Compose, 앱 이미지의 readiness·스키마·실행 권한·DB 장애/복구를 검사합니다.
-요청 ID와 텍스트·JSON 요청 로그, 공개 CA 파일도 실제 이미지에서 검증합니다.
-앱 변경이 있는 main에서 검증한 이미지를 SHA 태그로 ECR에 올리고 OIDC·제한된 SSM 문서로 EC2에 전달합니다.
-`README.md`와 `docs/`의 Markdown만 변경되고 미배포 앱 변경이 없으면 문서 검사만 수행합니다.
-main에서 수동 실행하면 기존처럼 전체 검사와 배포를 수행합니다.
-
-로컬 PostgreSQL·Spring Compose는 이 레포에서, 운영 Compose·Nginx·Certbot·배포 도구는 EC2에서 관리합니다.
-서버 관리 자료는 EC2의 `/opt/azas/management/README.md`에 있습니다.
-앱과 서버 사이의 약속 및 Actions 변수는 [CI/CD 가이드](docs/deployment.md)를 참고하세요.
-
-- 운영 Swagger UI: https://api.azas.n-e.kr/docs
-- 운영 readiness: https://api.azas.n-e.kr/actuator/health/readiness
+- **로컬 확인** — DB 연결이 정상이면 readiness가 `UP`을 반환합니다. 지형 적재 후 Swagger에서 `GET /api/v1/landing-sites`를 실행하면 후보지 27개를 확인할 수 있습니다. [Readiness](http://127.0.0.1:8000/actuator/health/readiness)
+- **자동 테스트** — JDK 21과 Docker가 준비된 환경에서 `./gradlew check bootJar`를 실행합니다. Windows에서는 `.\gradlew.bat check bootJar`를 사용합니다. 통합 테스트는 Testcontainers로 별도의 PostgreSQL을 띄웁니다.
+- **가시성 해석** — 접지 분석에 필요한 10분 격자의 관측값이 빠지면 `OBSERVER_DATA_INCOMPLETE`로 실행이 실패합니다. 가시율은 천체 중심이 지형 지평선 위에 있는 시간의 비율이며, 실제 발전량과 통신 품질은 별도 검증이 필요합니다.
+- **궤적 해석** — 발사 시각은 가정한 주차 궤도의 기하 조건으로 구한 후보입니다. 전이 궤적은 지구 중심 2체 모델로 달 도착까지 계산하며, 달 궤도 진입과 표면 하강은 모델 범위 밖입니다.
