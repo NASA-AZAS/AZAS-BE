@@ -53,7 +53,7 @@ Optionally include `launchToTliDelayHours` with the transfer inputs. If it is om
 
 A full candidate evaluation requests Earth (399) and Moon (301) vectors at both TLI and lunar arrival, four lookups in total. It uses Earth-only propagation and a zero-revolution Lambert solution. The model returns `trajectoryVerified=false`. In `CACHE_ONLY` mode there is no local transfer vector archive, so the result is `UNKNOWN / SOURCE_OR_NUMERICAL_ERROR` with reason `VECTOR_ARCHIVE_UNAVAILABLE` and no external request. A departure before the search start is `EXCLUDED` before any vector lookup.
 
-Each candidate records touchdown and activity end, its assessment, launch/TLI/arrival times when available, transfer duration, solver state and residual, model and reasons. This optional assessment uses the supplied departure state. The separate launch-site and trajectory endpoints assume a fixed parking orbit and use the first qualifying touchdown.
+Each candidate records touchdown and activity end, its assessment, launch/TLI/arrival times when available, transfer duration, solver state and residual, model and reasons. This optional assessment uses the supplied departure state. The separate launch-site and trajectory endpoints assume a fixed parking orbit and use the selected touchdown. Launch options default to the first qualifying touchdown.
 
 ## What a run saves
 
@@ -63,6 +63,7 @@ Each candidate records touchdown and activity end, its assessment, launch/TLI/ar
 | `landing_opportunity_result` | Every touchdown window, independent of the candidate limit. |
 | `surface_candidate_result` | Individual evaluated touchdown times, transfer assessments and numerical results. |
 | `launch_option_batch` | Model, assumptions, engine fingerprint, touchdown and calculation time. |
+| `launch_touchdown_date` | The launch batch selected for a given analysis run and UTC date. |
 | `launch_option_result` | A snapshot of each launch site's coordinates and candidate, including sites with no candidate. |
 | `trajectory_run` | A new ID for each calculation, selected inputs, engine fingerprint, state, residual, velocity change and sources. |
 | `trajectory_sample` | Sample order, UTC time, elapsed time and XYZ position and velocity for one trajectory. |
@@ -70,6 +71,8 @@ Each candidate records touchdown and activity end, its assessment, launch/TLI/ar
 A newly saved qualifying window records `SURFACE_CRITERIA_SATISFIED` in its decision reasons. Read `windows[].surfaceStatus` for the window verdict. Individual candidates have their own reasons. For example, missing transfer inputs produce `TRANSFER_INPUTS_MISSING`. Historical reasons from before change #34 are preserved.
 
 New analyses save launch options in the same transaction that completes the analysis. Updating a launch site's coordinates later leaves that snapshot intact. If the launch catalogue was empty, the surface analysis can succeed while the launch batch records `DATA_UNAVAILABLE`. Load the catalogue and start a new analysis to use it.
+
+In schema version 7, the first touchdown batch has an empty `selection_key`. Selecting a different surface candidate uses the run's saved launch site coordinates and stores the batch under a separate key. A date selection and its batch are saved in the same transaction. Each saved trajectory reads `surfaceCandidateId` from its input snapshot. Trajectories saved before version 7 return `null` for that field.
 
 Runs from before schema version 6 reconstruct their surface candidates from the saved windows. The first launch-options lookup calculates and saves a snapshot using the catalogue and calculation time at that first lookup. Subsequent lookups reuse it. `calculatedAt` and `engineSha256` identify when and how the options were calculated. Historical trajectories exist only when a calculation was saved.
 

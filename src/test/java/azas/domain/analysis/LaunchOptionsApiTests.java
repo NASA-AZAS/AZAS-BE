@@ -117,6 +117,26 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"DM2", "Site01"})
+    void arrivalPickerRequiresEnoughTouchdownFlexibilityAtEverySite(String code) throws Exception {
+        long site = jdbc.queryForObject("select landing_site_id from landing_site where site_code = ?", Long.class, code);
+        UUID id = run("DATE_OPPORTUNITIES", "SUCCEEDED", START, site);
+        window(id, "SATISFIED", "2027-01-03T00:00:00Z");
+        window(id, "SATISFIED", "2027-01-10T00:00:00Z");
+        window(id, "UNKNOWN", "2027-01-20T00:00:00Z");
+        // The first window is one grid step short, the second is exactly 48 h.
+        jdbc.update("""
+                update landing_opportunity_result set surface_activity_finished_at = proposed_landing_at + interval '48 hours',
+                    landing_window_end_at = landing_window_start_at + case when landing_window_start_at = '2027-01-03T00:00Z'
+                    then interval '47 hours 50 minutes' else interval '48 hours' end where analysis_run_id = ?
+                """, id);
+        var data = dateOpportunities(id);
+        assertThat(data.path("windows").size()).isEqualTo(3);
+        assertThat(data.path("arrivalWindows")).extracting(w -> w.path("startUtc").asString())
+                .containsExactly("2027-01-10T00:00:00Z");
+    }
+
     @Test
     void savedRunsWithEmptyCandidateHistoryStillReturnTheirTouchdownWindows() throws Exception {
         UUID id = dateRun("SUCCEEDED");
@@ -166,6 +186,67 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
     private JsonNode report(UUID id) throws Exception {
         return json.readTree(mvc.perform(get(PATH, id)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString()).path("data");
+    }
+
+    @Test
+    void selectsTheFirstLaunchableGridPointAndDistinguishesEmptyInvalidAndUnavailable() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        window(id, "SATISFIED", START);
+        window(id, "SATISFIED", "2027-01-03T00:00:00Z");
+        jdbc.update("""
+                update landing_opportunity_result set landing_window_end_at = '2027-01-03T23:59:59Z'
+                where analysis_run_id = ? and landing_window_start_at = '2027-01-03T00:00Z'
+                """, id);
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-01-01")).andExpect(status().isServiceUnavailable());
+        jdbc.update("insert into launch_site values (1, 'Kennedy', 28.61, -80.60)");
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-01-01")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.touchdownUtc").value(START)).andExpect(jsonPath("$.data.surfaceCandidateId").isString())
+                .andExpect(jsonPath("$.data.launchSites").isEmpty());
+
+        var selected = json.readTree(mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-01-03"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        Instant time = Instant.parse(selected.path("touchdownUtc").asString());
+        assertThat(time.toString()).startsWith("2027-01-03T");
+        assertThat(time).isAfter(Instant.parse("2027-01-03T00:00:00Z"));
+        assertThat(selected.path("launchSites").size()).isOne();
+        assertThat(time.getEpochSecond() % 600).isZero();
+        assertThat(azas.domain.analysis.engine.LaunchOptionCalculator.candidates("Kennedy", 28.61, -80.60,
+                Instant.parse(START), time.minusSeconds(600))).isEmpty();
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-01-02")).andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("TOUCHDOWN_DATE_UNAVAILABLE"));
+        mvc.perform(get(PATH, id).param("surfaceCandidateId", "missing")).andExpect(status().isNotFound());
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-01-03").param("surfaceCandidateId", "both"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-02-30")).andExpect(status().isBadRequest());
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "")).andExpect(status().isBadRequest());
+        UUID another = dateRun("SUCCEEDED");
+        mvc.perform(get(PATH, another).param("surfaceCandidateId", selected.path("surfaceCandidateId").asString()))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(TRAJECTORY, another, selected.path("launchSites").get(0).path("candidates").get(0).path("candidateId").asString()))
+                .andExpect(status().isNotFound());
+        mvc.perform(get(PATH, dateRun("RUNNING")).param("touchdownDateUtc", "2027-01-03")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void dateSelectionUsesTheOriginalWindowGridAndIncludesItsOffGridEnd() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        jdbc.update("insert into launch_site values (1, 'Kennedy', 28.61, -80.60)");
+        jdbc.update("update analysis_run set analysis_parameters = ?::jsonb where analysis_run_id = ?",
+                "{\"request\":{\"timeStepMinutes\":60}}", id);
+        window(id, "SATISFIED", "2027-01-18T23:50:00Z");
+        jdbc.update("update landing_opportunity_result set landing_window_end_at = '2027-01-20T00:10Z' where analysis_run_id = ?", id);
+        window(id, "SATISFIED", "2027-01-20T06:10:00Z");
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-01-19")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.touchdownUtc").value("2027-01-19T00:50:00Z"));
+        mvc.perform(get(PATH, id).param("touchdownDateUtc", "2027-01-20")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.touchdownUtc").value("2027-01-20T00:10:00Z"));
+        mvc.perform(get(PATH, id).param("touchdownUtc", "2027-01-20T00:10:00Z")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.touchdownUtc").value("2027-01-20T00:10:00Z"));
+        mvc.perform(get(PATH, id).param("touchdownUtc", "2027-01-20T06:10:00Z")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.touchdownUtc").value("2027-01-20T06:10:00Z"));
+        mvc.perform(get(PATH, id).param("touchdownUtc", "2027-01-19T09:00:00Z")).andExpect(status().isUnprocessableEntity());
+        mvc.perform(get(PATH, id).param("touchdownUtc", "2027-01-19T00:50:00Z").param("touchdownDateUtc", "2027-01-19"))
+                .andExpect(status().isBadRequest());
     }
 
     private JsonNode dateOpportunities(UUID id) throws Exception {
@@ -285,6 +366,28 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
         assertThat(failure.path("samples").size()).isZero();
         assertThat(jdbc.queryForObject("select execution_status from trajectory_run where trajectory_run_id = ?", String.class,
                 UUID.fromString(failure.path("trajectoryRunId").asString()))).isEqualTo("FAILED");
+    }
+
+    @Test
+    void concurrentSelectionsOfTheSameDateReuseOneBatch() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        window(id, "SATISFIED", TOUCHDOWN);
+        window(id, "SATISFIED", "2027-01-25T04:10:00Z");
+        jdbc.update("insert into launch_site values (1, 'Kennedy', 28.61, -80.60)");
+        var date = java.time.LocalDate.of(2027, 1, 25);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var threads = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            java.util.concurrent.Callable<String> select = () -> {
+                start.await();
+                return options.get(id, date, null, null).surfaceCandidateId();
+            };
+            var first = threads.submit(select);
+            var second = threads.submit(select);
+            start.countDown();
+            assertThat(first.get()).isNotBlank().isEqualTo(second.get());
+        }
+        assertThat(jdbc.queryForObject("select count(*) from launch_touchdown_date where analysis_run_id = ?", Integer.class, id)).isOne();
+        assertThat(jdbc.queryForObject("select count(*) from launch_option_batch where analysis_run_id = ?", Integer.class, id)).isEqualTo(2);
     }
 
     private JsonNode trajectory(UUID id, String candidate) throws Exception {

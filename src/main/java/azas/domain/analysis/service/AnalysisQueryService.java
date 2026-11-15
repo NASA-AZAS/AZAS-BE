@@ -61,7 +61,7 @@ public class AnalysisQueryService {
             throw new BusinessException(AnalysisErrorCode.TYPE_MISMATCH);
         }
         if (run.getExecutionStatus() != ExecutionStatus.SUCCEEDED) {
-            return new AnalysisResponses.Opportunities(id, null, List.of(), List.of());
+            return new AnalysisResponses.Opportunities(id, null, List.of(), List.of(), List.of());
         }
 
         var intervals = touchdownWindows(id);
@@ -69,10 +69,15 @@ public class AnalysisQueryService {
                 .map(AnalysisResponses.TouchdownWindow::startUtc).min(Instant::compareTo).orElse(null);
         boolean hasStoredCandidates = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters()).has("request");
         var candidates = hasStoredCandidates ? history.get(id) : reconstructLegacyCandidates(id, intervals);
-        return new AnalysisResponses.Opportunities(id, earliest, intervals, candidates);
+        var arrivalWindows = intervals.stream()
+                .filter(window -> "SATISFIED".equals(window.surfaceStatus()))
+                .filter(window -> Duration.between(window.startUtc(), window.endUtc())
+                        .compareTo(Duration.between(window.endUtc(), window.supportEndUtc())) >= 0)
+                .toList();
+        return new AnalysisResponses.Opportunities(id, earliest, intervals, candidates, arrivalWindows);
     }
 
-    private List<AnalysisResponses.TouchdownWindow> touchdownWindows(UUID id) {
+    List<AnalysisResponses.TouchdownWindow> touchdownWindows(UUID id) {
         var intervals = new ArrayList<AnalysisResponses.TouchdownWindow>();
         for (var row : opportunities.findByAnalysisRunIdOrderByLandingWindowStartAt(id)) {
             Instant start = row.getLandingWindowStartAt(), end = row.getLandingWindowEndAt();

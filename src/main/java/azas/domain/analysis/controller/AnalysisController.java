@@ -24,6 +24,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.net.URI;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -107,6 +108,7 @@ public class AnalysisController {
     @Operation(summary = "Get landing windows and individual touchdown candidates", description = """
             Each window gives a range of possible touchdown times and a surfaceStatus. earliestTouchdownUtc is the start of the first
             SATISFIED window, or null if none qualifies. The response includes all windows even when the run is TRUNCATED.
+            arrivalWindows lists SATISFIED windows whose touchdown range is at least as long as the requested surface activity, earliest first.
             The candidate limit applies to individually evaluated touchdown times. Check each candidate's status, lambertStatus and reasons.
             If you omit the transfer inputs, its status is ENVIRONMENT_ONLY and its reasons include TRANSFER_INPUTS_MISSING.
             """)
@@ -115,7 +117,7 @@ public class AnalysisController {
     }
     @GetMapping("/analyses/{runId}/surface-candidates/{candidateId}/post-landing")
     @Operation(summary = "See the Sun and Earth from a touchdown site", description = """
-            Select a touchdown candidate from date-opportunities (candidates[].candidateId). The samples follow the Sun and Earth from touchdown
+            Pass surfaceCandidateId from launch-options or candidates[].candidateId from date-opportunities. The samples follow the Sun and Earth from touchdown
             to the end of surface activity on the original ten-minute UTC grid. Azimuth is clockwise from local north. Elevation is measured
             from the local horizontal in degrees. A body is visible when its centre is above the terrain skyline in that direction.
             For a smooth sky track, unwrap azimuth across 0/360 degrees and interpolate ten adjacent samples with a ninth-degree Lagrange polynomial.
@@ -137,13 +139,29 @@ public class AnalysisController {
     }
 
     @GetMapping("/analyses/{runId}/launch-options")
-    @Operation(summary = "Compare launch sites for the first possible touchdown", description = """
-            Return the launch options calculated for the start of the first landing window that satisfies the surface requirements.
-            Each launch site has zero or one candidate. Use that candidateId when requesting a trajectory.
+    @Operation(summary = "Compare launch sites for a selected touchdown", description = """
+            Without a selector, the response lists all launch sites for the first qualifying touchdown. Supply at most one selector.
+            touchdownDateUtc selects the earliest launchable touchdown on that UTC date using the saved candidate spacing and window endpoints.
+            touchdownUtc selects an exact grid time or window endpoint. surfaceCandidateId selects the touchdown of that surface candidate.
+            A selected touchdown returns only sites with a launch candidate, or HTTP 200 and an empty launchSites list if none is available.
+            An unavailable touchdown returns 422, an unknown surface candidate returns 404 and a missing launch catalogue returns 503.
+            Use launchSites[].candidates[].candidateId for the trajectory and surfaceCandidateId for the post-landing view.
             calculatedAt records when the options were calculated. Analyses created before schema version 6 use site coordinates from the first lookup.
             """)
-    public ApiResponse<LaunchOptionsResponse> launchOptions(@PathVariable UUID runId) {
-        return ApiResponse.success(launchOptions.get(runId));
+    public ApiResponse<LaunchOptionsResponse> launchOptions(@PathVariable UUID runId,
+            @Parameter(schema = @Schema(type = "string", format = "date"), description = "UTC touchdown date (YYYY-MM-DD).")
+            @RequestParam(required = false) String touchdownDateUtc,
+            @Parameter(schema = @Schema(type = "string", format = "date-time"), description = "Exact touchdown time, such as arrivalWindows[].startUtc.")
+            @RequestParam(required = false) String touchdownUtc,
+            @Parameter(description = "Surface candidate ID from this analysis.")
+            @RequestParam(required = false) String surfaceCandidateId) {
+        try {
+            LocalDate date = touchdownDateUtc == null ? null : LocalDate.parse(touchdownDateUtc);
+            Instant time = touchdownUtc == null ? null : Instant.parse(touchdownUtc);
+            return ApiResponse.success(launchOptions.get(runId, date, time, surfaceCandidateId));
+        } catch (java.time.format.DateTimeParseException invalidDate) {
+            throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+        }
     }
 
     @PostMapping("/analyses/{runId}/launch-options/{candidateId}/trajectory")

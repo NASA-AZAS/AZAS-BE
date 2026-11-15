@@ -36,8 +36,8 @@ On first startup, the API creates the database tables. Load the data for the fea
 
 1. **Choose a landing site.** The preview shows the average percentage of the day that the Sun is visible, and the same measure for Earth. These averages use the full two years of observations from 2027 and 2028.
 2. **Set a deadline.** Submit the site and deadline. The API gives you a reference for checking the progress and results of that search. Each window has an earliest and a latest touchdown time. Some searches finish with no suitable window.
-3. **Explore the surface.** Select the earliest touchdown to follow the Sun and Earth across the local sky. The timeline shows when terrain blocks either one. You can also look up visibility for a particular day.
-4. **Work back to launch.** For that first touchdown, compare schedules from Earth. Each available schedule starts with launch, followed by the burn that sends the spacecraft toward the Moon, lunar arrival, and touchdown.
+3. **Explore the surface.** Choose a touchdown from the arrival windows to follow the Sun and Earth across the local sky. The timeline shows when terrain blocks either one. You can also look up visibility for a particular day.
+4. **Work back to launch.** For your selected touchdown, compare schedules from Earth. Each available schedule starts with launch, followed by the burn that sends the spacecraft toward the Moon, lunar arrival, and touchdown.
 5. **Open a flight path.** Choose a launch option to calculate a preliminary trajectory using positions from NASA’s JPL Horizons service. You can reopen the saved path later without repeating the calculation.
 
 The API explorer lets you try each request. The detailed guide includes request examples and response fields. [Interactive API reference](https://api.azas.n-e.kr/docs) · [Analysis API guide](docs/analysis-api.md)

@@ -49,7 +49,8 @@ class PostLandingApiTests extends PostgresIntegrationTest {
         assertThat(first.path("proposedLandingUtc").asString()).isEqualTo(TOUCHDOWN);
         var actual = data(PATH, run.id(), first.path("candidateId").asString());
         try (var file = getClass().getResourceAsStream("/analysis/post_landing.json")) {
-            var original = json.readTree(file);
+            var original = (tools.jackson.databind.node.ObjectNode) json.readTree(file);
+            original.put("surfaceCandidateId", first.path("candidateId").asString());
             assertThat(actual.path("samples").size()).isEqualTo(289);
             assertThat(actual).isEqualTo(original);
             assertThat(detail.path("meanDailyVisibility")).isEqualTo(original.path("meanDailyVisibility"));

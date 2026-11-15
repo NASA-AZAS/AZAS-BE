@@ -245,18 +245,26 @@ Table surface_candidate_result {
 }
 
 Table launch_option_batch {
-  analysis_run_id uuid [pk]
+  analysis_run_id uuid [not null]
+  selection_key text [not null, default: '']
+  surface_candidate_id text
+  surface_end_at timestamptz
   calculated_at timestamptz [not null]
   engine_sha256 char(64) [not null]
   model text [not null]
   assumptions jsonb [not null]
   touchdown_at timestamptz
   status text [not null]
+  indexes {
+    (analysis_run_id, selection_key) [pk]
+    (analysis_run_id, surface_candidate_id) [unique]
+  }
   Note: 'Groups the launch options calculated for one touchdown. New analyses save this when they finish. For runs predating version 6 of the schema, the first lookup saves the calculation.'
 }
 
 Table launch_option_result {
   analysis_run_id uuid [not null]
+  selection_key text [not null, default: '']
   launch_site_id bigint [not null]
   site_code text [not null]
   latitude_degrees "double precision" [not null]
@@ -268,10 +276,19 @@ Table launch_option_result {
   lunar_arrival_at timestamptz
   proposed_landing_at timestamptz
   indexes {
-    (analysis_run_id, launch_site_id) [pk]
+    (analysis_run_id, selection_key, launch_site_id) [pk]
     (analysis_run_id, candidate_code) [unique]
   }
   Note: 'Launch schedule for one Earth site, including sites with no suitable launch time. A copy of the site coordinates preserves the original result if the catalogue changes.'
+}
+
+Table launch_touchdown_date {
+  analysis_run_id uuid [not null]
+  touchdown_date date [not null]
+  selection_key text [not null]
+  indexes {
+    (analysis_run_id, touchdown_date) [pk]
+  }
 }
 
 Table trajectory_run {
@@ -319,8 +336,9 @@ Table trajectory_sample {
 }
 
 Ref: surface_candidate_result.analysis_run_id > analysis_run.analysis_run_id
-Ref: launch_option_batch.analysis_run_id - analysis_run.analysis_run_id
-Ref: launch_option_result.analysis_run_id > launch_option_batch.analysis_run_id
+Ref: launch_option_batch.analysis_run_id > analysis_run.analysis_run_id
+Ref: launch_option_result.(analysis_run_id, selection_key) > launch_option_batch.(analysis_run_id, selection_key)
+Ref: launch_touchdown_date.(analysis_run_id, selection_key) > launch_option_batch.(analysis_run_id, selection_key)
 Ref: trajectory_run.analysis_run_id > analysis_run.analysis_run_id
 Ref: trajectory_run.(analysis_run_id, candidate_code) > launch_option_result.(analysis_run_id, candidate_code)
 Ref: trajectory_sample.trajectory_run_id > trajectory_run.trajectory_run_id

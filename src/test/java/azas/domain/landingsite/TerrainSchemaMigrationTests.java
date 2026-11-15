@@ -69,7 +69,7 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
         }
 
         Flyway current = flyway(database);
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(4); // V3 lease, V4 observations, V5 launch sites, V6 analysis history
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(5); // V3 through V7
         assertThat(current.validateWithResult().validationSuccessful).isTrue();
         assertThat(current.migrate().migrationsExecuted).isZero();
 
@@ -118,7 +118,8 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
             beforeWindow = scalar(connection, "select row_to_json(t)::text from landing_opportunity_result t");
             beforeChecksums = scalar(connection, "select string_agg(version || ':' || checksum, ',' order by installed_rank) from flyway_schema_history");
         }
-        var current = flyway(database);
+        var current = Flyway.configure().dataSource(url(database), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .target("6").load();
         assertThat(current.migrate().migrationsExecuted).isOne();
         assertThat(current.validateWithResult().validationSuccessful).isTrue();
         assertThat(current.migrate().migrationsExecuted).isZero();
@@ -133,6 +134,70 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
             assertThat(count(connection, "launch_site")).isOne();
             for (String table : new String[]{"surface_candidate_result", "launch_option_batch", "launch_option_result", "trajectory_run", "trajectory_sample"})
                 assertThat(count(connection, table)).isZero();
+        }
+    }
+
+    @Test
+    void v7KeepsStoredTrajectoriesLinkedToTheOriginalLaunchOption() throws Exception {
+        String database = createDatabase();
+        Flyway.configure().dataSource(url(database), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .target("6").load().migrate();
+        TerrainTestData.copyInto(POSTGRES, database);
+        String beforeTrajectory;
+        try (Connection connection = connect(database); var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    insert into analysis_run (analysis_run_id, landing_site_id, analysis_type, execution_status,
+                        analysis_start_at, analysis_end_at, sample_interval_minutes, mission_due_date, mission_deadline_at,
+                        analysis_parameters, calculation_parameters_sha256, engine_version, engine_sha256)
+                    values ('00000000-0000-0000-0000-000000000007', 1, 'DATE_OPPORTUNITIES', 'SUCCEEDED',
+                        '2027-01-01T00:00Z', '2027-02-01T00:00Z', 10, '2027-01-31', '2027-02-01T00:00Z',
+                        '{}', repeat('a',64), 'v6', repeat('b',64))
+                    """);
+            statement.executeUpdate("""
+                    insert into launch_option_batch
+                    select analysis_run_id, now(), engine_sha256, 'v6', '{}', '2027-01-19T00:00Z', 'READY'
+                    from analysis_run
+                    """);
+            statement.executeUpdate("""
+                    insert into launch_option_result
+                    select analysis_run_id, 1, 'Kennedy', 28.61, -80.60, 'GEOMETRIC_ONLY', 'old-launch',
+                        '2027-01-13T00:00Z', '2027-01-13T02:00Z', '2027-01-18T18:00Z', touchdown_at
+                    from launch_option_batch
+                    """);
+            statement.executeUpdate("""
+                    insert into trajectory_run (trajectory_run_id, analysis_run_id, launch_site_id, candidate_code,
+                        execution_status, created_at, expires_at, engine_sha256, input_snapshot)
+                    select '00000000-0000-0000-0000-000000000001', analysis_run_id, launch_site_id, candidate_code,
+                        'SUCCEEDED', now(), now() + interval '30 days', repeat('b',64), '{"candidateId":"old-launch"}'
+                    from launch_option_result
+                    """);
+            beforeTrajectory = scalar(connection, "select row_to_json(t)::text from trajectory_run t");
+        }
+        Flyway current = flyway(database);
+        assertThat(current.migrate().migrationsExecuted).isOne();
+        assertThat(current.validateWithResult().validationSuccessful).isTrue();
+        try (Connection connection = connect(database); var statement = connection.createStatement()) {
+            // Store a second choice at the same launch site alongside the V6 result.
+            statement.executeUpdate("""
+                    insert into launch_option_batch (analysis_run_id, selection_key, surface_candidate_id, calculated_at,
+                        engine_sha256, model, assumptions, touchdown_at, surface_end_at, status)
+                    select analysis_run_id, 'surface-2', 'surface-2', now(), engine_sha256, model, assumptions,
+                        touchdown_at + interval '1 day', touchdown_at + interval '3 days', status
+                    from launch_option_batch where selection_key = ''
+                    """);
+            statement.executeUpdate("""
+                    insert into launch_option_result (analysis_run_id, selection_key, launch_site_id, site_code,
+                        latitude_degrees, longitude_degrees_east, status)
+                    select analysis_run_id, 'surface-2', launch_site_id, site_code, latitude_degrees, longitude_degrees_east,
+                        'NO_CANDIDATE' from launch_option_result where selection_key = ''
+                    """);
+            assertThat(count(connection, "launch_option_result")).isEqualTo(2);
+            assertThat(scalar(connection, "select row_to_json(t)::text from trajectory_run t")).isEqualTo(beforeTrajectory);
+            assertThat(scalar(connection, """
+                    select o.candidate_code from trajectory_run t join launch_option_result o using (analysis_run_id, candidate_code)
+                    join launch_option_batch b using (analysis_run_id, selection_key)
+                    where b.selection_key = '' and b.touchdown_at = '2027-01-19T00:00Z'
+                    """)).isEqualTo("old-launch");
         }
     }
 

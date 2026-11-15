@@ -61,11 +61,12 @@ Once the run succeeds, call `GET /api/v1/analyses/{runId}/date-opportunities`.
 | --- | --- |
 | `windows` | Each window gives a surface verdict (`surfaceStatus`). Touchdown can occur from `startUtc` through `endUtc`, inclusive. The latest touchdown is the last supporting observation (`supportEndUtc`) minus the required activity duration. |
 | `earliestTouchdownUtc` | Start of the first `SATISFIED` window, or `null` if none qualifies. |
+| `arrivalWindows` | Windows for the arrival picker, earliest first. Each must be `SATISFIED` and its touchdown range (`endUtc - startUtc`) must cover at least the requested activity duration (48 hours by default). Use the selected row's `startUtc` as `touchdownUtc` when requesting launch options. |
 | `candidates` | Individual touchdown times evaluated within qualifying windows. `proposedLandingUtc` is the time of a specific touchdown. `candidateId` selects its post-landing view. Read `status`, `lambertStatus` and `reasons` for the transfer assessment. |
 
 A window can satisfy the surface conditions even when the request supplied no transfer inputs. In that case its candidate can have `status=ENVIRONMENT_ONLY`, `lambertStatus=NOT_EVALUATED` and reason `TRANSFER_INPUTS_MISSING`.
 
-The default limit is 50 candidates. If the next evaluation would exceed `maxCandidates`, the overall result is `TRUNCATED`. You still get every landing window and the daily results. Before success, or after a failed run, the earliest touchdown is null and both lists are empty. Check the run state before interpreting an empty list.
+The default limit is 50 candidates. If the next evaluation would exceed `maxCandidates`, the overall result is `TRUNCATED`. You still get every landing window and the daily results. Before success, or after a failed run, the earliest touchdown is null and the lists are empty. Check the run state before interpreting an empty list.
 
 ## Get daily visibility
 
@@ -84,7 +85,7 @@ The hourly model treats a body at or below the measured skyline as `OCCULTED`. A
 
 ## See the sky after touchdown
 
-After a successful landing-window analysis, choose a `candidateId` from its touchdown candidates. Use that ID with the **same analysis**. This also works for candidates reconstructed from runs created before schema version 6.
+After a successful landing-window analysis, use the `surfaceCandidateId` returned by launch options or a `candidateId` from the analysis's touchdown candidates. Use that ID with the **same analysis**. This also works for candidates reconstructed from runs created before schema version 6.
 
 ```http
 GET /api/v1/analyses/{runId}/surface-candidates/{candidateId}/post-landing
@@ -154,15 +155,17 @@ With one sample, hold that position. With two to nine, interpolate linearly betw
 
 To check the interpolation, `makeSkyTrack(data, "earth")(2700)` gives an azimuth of **125.136829°** and an elevation of **5.825041°** for Site01 at 04:55 UTC on 19 January 2027. Use `"sun"` for the solar track.
 
-## Compare launches for the earliest touchdown
+## Compare launches for a selected touchdown
 
-Call `GET /api/v1/analyses/{runId}/launch-options`. The current API uses the **first qualifying touchdown** from that run, including when the result is truncated. It does not accept a different touchdown date or surface candidate. The response identifies the lunar site in `landingSiteId` and the selected instant in `touchdownUtc`.
+Call `GET /api/v1/analyses/{runId}/launch-options`. To use an arrival picker row, pass its exact start time, for example `?touchdownUtc=2027-02-10T08:40:00Z`. You can also select a UTC calendar date with `touchdownDateUtc` or a surface candidate with `surfaceCandidateId`. Supply at most one selector. The response identifies the lunar site, the selected `touchdownUtc` and the corresponding `surfaceCandidateId`. [Frontend integration examples (Korean)](touchdown-selection.md)
+
+An explicit selection returns the launch sites with a candidate for that touchdown. A valid selection with no launch candidate returns HTTP 200 with an empty `launchSites` list. An unavailable date or instant returns 422, and an unknown surface candidate returns 404. With no selector, the endpoint uses the first qualifying touchdown, including when the run is truncated.
 
 `launchSites` is ordered by numeric launch site ID. Each entry includes its code, latitude, east-positive longitude and either zero candidates or the earliest launch candidate. Each candidate gives four UTC times: launch, translunar injection (departure from Earth orbit toward the Moon), lunar arrival and touchdown. Use the **launch** candidate ID from this response for the trajectory request.
 
 The `ILLUSTRATIVE_FIXED_PARKING_PLANE` model assumes a 300 km parking orbit with inclination 51.6° and right ascension of the ascending node 0°. It places lunar arrival six hours before touchdown and departure toward the Moon two hours after launch. It looks for a crossing after the analysis starts with a transfer lasting 48–120 hours. For touchdown at `2027-01-19T04:10:00Z`, Kennedy has a candidate at `2027-01-13T23:32:00Z` (`Kennedy-1799883120`) and Vostochny has none. `GEOMETRIC_ONLY` and `launchVerified=false` identify this preliminary result.
 
-| Run or catalogue condition | Response |
+| Run or catalogue condition when no selector is supplied | Response |
 | --- | --- |
 | Pending, running, failed, or succeeded with no qualifying window | 200 with the run state, `touchdownUtc=null` and `launchSites=[]` |
 | Touchdown found and the launch catalogue is available | 200 with all registered sites. Sites without a launch option have `candidates=[]`. |

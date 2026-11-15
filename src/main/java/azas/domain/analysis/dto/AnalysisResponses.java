@@ -30,7 +30,9 @@ public final class AnalysisResponses {
         }
     }
     public record Opportunities(UUID analysisRunId, Instant earliestTouchdownUtc, List<TouchdownWindow> windows,
-            List<SurfaceCandidate> candidates) {}
+            List<SurfaceCandidate> candidates,
+            @Schema(description = "Windows for the arrival picker. The surface conditions are satisfied and the touchdown range is at least as long as the requested activity.")
+            List<TouchdownWindow> arrivalWindows) {}
     public record Run(UUID analysisRunId, Long landingSiteId, String analysisType, String executionStatus,
             String overallResultStatus, Instant analysisStartAt, Instant analysisEndAt, int sampleIntervalMinutes,
             String engineVersion, String engineSha256, Instant createdAt, Instant executionStartedAt,
