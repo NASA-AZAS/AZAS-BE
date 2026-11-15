@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class TrajectoryHistoryStore {
     private final JdbcTemplate jdbc;
     public record Input(UUID analysisRunId, long landingSiteId, LaunchOptionsResponse.Site site,
-            LaunchOptionsResponse.Candidate candidate, LaunchOptionsResponse.Assumptions assumptions) {}
+            LaunchOptionsResponse.Candidate candidate, LaunchOptionsResponse.Assumptions assumptions, String surfaceCandidateId) {}
     public record Prepared(UUID id, Instant expiresAt, Input input) {}
 
     @Transactional(readOnly = true)
@@ -37,7 +37,8 @@ public class TrajectoryHistoryStore {
     public Prepared create(LaunchOptionsResponse options, LaunchOptionsResponse.Site site, LaunchOptionsResponse.Candidate candidate) {
         UUID id = UUID.randomUUID();
         Instant now = Instant.now(), expires = now.plusSeconds(AnalysisStore.TIMEOUT_SECONDS);
-        var input = new Input(options.analysisRunId(), options.landingSiteId(), site, candidate, options.assumptions());
+        var input = new Input(options.analysisRunId(), options.landingSiteId(), site, candidate,
+                options.assumptions(), options.surfaceCandidateId());
         jdbc.update("""
                 insert into trajectory_run (trajectory_run_id, analysis_run_id, launch_site_id, candidate_code,
                     execution_status, created_at, expires_at, engine_sha256, input_snapshot)
@@ -115,6 +116,7 @@ public class TrajectoryHistoryStore {
             List<LaunchTrajectoryResponse.Sample> samples = "SUCCEEDED".equals(state) ? samples(trajectoryId) : List.of();
             return LaunchTrajectoryResponse.builder().analysisRunId(analysisId).landingSiteId(input.landingSiteId())
                     .launchSiteId(input.site().launchSiteId()).launchSiteCode(input.site().launchSiteCode()).candidateId(c.candidateId())
+                    .surfaceCandidateId(input.surfaceCandidateId())
                     .status(rs.getString("status")).reason(rs.getString("reason")).lambertStatus(rs.getString("solver_status"))
                     .model(rs.getString("model")).frame(rs.getString("frame")).origin(rs.getString("origin"))
                     .segment(rs.getString("segment")).arrivalTarget(rs.getString("arrival_target")).assumptions(input.assumptions())

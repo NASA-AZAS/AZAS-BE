@@ -24,6 +24,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.net.URI;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -109,6 +110,7 @@ public class AnalysisController {
             candidates는 구간에서 개별 평가한 후보입니다. 각 후보의 status, lambertStatus, reasons를 함께 읽으세요.
             전이 입력을 생략하면 후보는 ENVIRONMENT_ONLY이고 reasons에 TRANSFER_INPUTS_MISSING이 들어갑니다.
             earliestTouchdownUtc는 첫 SATISFIED 구간의 시작이며, 만족 구간이 없으면 null입니다.
+            arrivalWindows는 모든 후보지에 같은 선택 기준을 적용합니다. 접지 가능 폭도 요청한 활동 시간 이상인 SATISFIED 구간을 시간순으로 반환합니다.
             TRUNCATED인 실행도 전체 구간을 반환합니다. maxCandidates는 개별 후보 수에 적용됩니다.
             """)
     public ApiResponse<AnalysisResponses.Opportunities> opportunities(@PathVariable UUID runId) {
@@ -116,7 +118,8 @@ public class AnalysisController {
     }
     @GetMapping("/analyses/{runId}/surface-candidates/{candidateId}/post-landing")
     @Operation(summary = "선택한 접지 후보에서 본 지구·태양의 하늘 경로", description = """
-            date-opportunities의 candidates[].candidateId를 사용합니다. 접지부터 활동 종료까지 실제 10분 격자 표본을 반환합니다.
+            launch-options의 surfaceCandidateId 또는 date-opportunities의 candidates[].candidateId를 사용합니다.
+            접지부터 활동 종료까지 실제 10분 격자 표본을 반환합니다.
             earth와 sun의 방위각은 현지 북쪽부터 시계 방향, 고도각은 현지 수평면 기준(도)입니다. 중심 고도가 지형 지평선보다 높으면 visible=true입니다.
             화면의 중간 위치는 프론트에서 주변 10개 표본의 방위각·고도각을 9차 라그랑주 보간합니다. 방위각의 0°/360° 경계는 연속 각도로 펼칩니다.
             표본이 2~9개이면 선형 보간하며, 가시 여부와 차폐 시각은 원본 표본의 판정을 사용합니다. 구현 예시는 저장소 docs/analysis-api.md에 있습니다.
@@ -136,13 +139,28 @@ public class AnalysisController {
     }
 
     @GetMapping("/analyses/{runId}/launch-options")
-    @Operation(summary = "첫 접지 시각 기준 발사장별 후보 조회", description = """
-            착륙 기회 분석의 첫 SATISFIED 접지 시각을 기준으로 계산한 발사장별 후보를 읽습니다.
-            launchSites[].candidates는 발사장마다 0개 또는 1개입니다. 궤적 POST에는 여기서 얻은 candidateId를 전달하세요.
-            calculatedAt은 발사 후보 계산 시각입니다. V6 이전 실행은 첫 조회 시점의 발사장 좌표를 사용합니다.
+    @Operation(summary = "선택한 접지 날짜 또는 표면 후보의 발사장 조회", description = """
+            선택을 생략하면 첫 SATISFIED 접지 시각의 기존 발사장 목록을 반환합니다.
+            touchdownDateUtc를 지정하면 만족 구간별 후보 간격과 종료점을 따라 해당 UTC 날짜의 발사 가능한 첫 접지 시각을 선택합니다.
+            touchdownUtc는 표시된 접지 시각(예: arrivalWindows[].startUtc), surfaceCandidateId는 개별 표면 후보를 그대로 선택합니다.
+            세 선택자 중 하나만 지정할 수 있습니다.
+            선택 조회는 발사 가능한 발사장만 반환하며 유효한 접지 시각에 발사장이 없으면 200과 빈 launchSites를 반환합니다.
+            날짜에 만족 구간이 없으면 422, 알 수 없는 표면 후보는 404, 발사장 기준 데이터 누락은 503입니다.
+            궤적 POST에는 launchSites[].candidates[].candidateId, 착륙 후 조회에는 surfaceCandidateId를 전달하세요.
             """)
-    public ApiResponse<LaunchOptionsResponse> launchOptions(@PathVariable UUID runId) {
-        return ApiResponse.success(launchOptions.get(runId));
+    public ApiResponse<LaunchOptionsResponse> launchOptions(@PathVariable UUID runId,
+            @Parameter(schema = @Schema(type = "string", format = "date"), description = "UTC 접지 날짜 (YYYY-MM-DD)")
+            @RequestParam(required = false) String touchdownDateUtc,
+            @Parameter(schema = @Schema(type = "string", format = "date-time"), description = "목록에서 선택한 정확한 UTC 접지 시각")
+            @RequestParam(required = false) String touchdownUtc,
+            @RequestParam(required = false) String surfaceCandidateId) {
+        try {
+            LocalDate date = touchdownDateUtc == null ? null : LocalDate.parse(touchdownDateUtc);
+            Instant time = touchdownUtc == null ? null : Instant.parse(touchdownUtc);
+            return ApiResponse.success(launchOptions.get(runId, date, time, surfaceCandidateId));
+        } catch (java.time.format.DateTimeParseException invalidDate) {
+            throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+        }
     }
 
     @PostMapping("/analyses/{runId}/launch-options/{candidateId}/trajectory")

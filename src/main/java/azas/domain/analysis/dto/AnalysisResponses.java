@@ -30,7 +30,9 @@ public final class AnalysisResponses {
         }
     }
     public record Opportunities(UUID analysisRunId, Instant earliestTouchdownUtc, List<TouchdownWindow> windows,
-            List<SurfaceCandidate> candidates) {}
+            List<SurfaceCandidate> candidates,
+            @Schema(description = "도착 선택 화면의 시간대. 만족 구간 중 접지 시각의 선택 폭도 요청한 표면 활동 시간 이상인 구간입니다.")
+            List<TouchdownWindow> arrivalWindows) {}
     public record Run(UUID analysisRunId, Long landingSiteId, String analysisType, String executionStatus,
             String overallResultStatus, Instant analysisStartAt, Instant analysisEndAt, int sampleIntervalMinutes,
             String engineVersion, String engineSha256, Instant createdAt, Instant executionStartedAt,

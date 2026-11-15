@@ -9,7 +9,7 @@ import lombok.Builder;
 
 @Builder(toBuilder = true)
 public record LaunchTrajectoryResponse(UUID analysisRunId, long landingSiteId, long launchSiteId, String launchSiteCode,
-        String candidateId,
+        String candidateId, String surfaceCandidateId,
         @Schema(description = "궤적 계산의 판정(PRELIMINARY, NO_PRELIMINARY_SOLUTION, FAILED). 대기·실행 중에는 null입니다.",
                 types = {"string", "null"}, nullable = true)
         String status, String reason, String lambertStatus, boolean launchVerified,

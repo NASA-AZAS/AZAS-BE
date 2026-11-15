@@ -107,6 +107,7 @@ Content-Type: application/json
 | --- | --- |
 | `windows[]` | 저장된 전체 접지 구간과 각각의 `surfaceStatus`. 접지 시각은 `startUtc`부터 `endUtc`까지 양 끝을 포함합니다. `endUtc`는 조건을 지지하는 마지막 관측 시각(`supportEndUtc`)에서 활동 시간을 뺀 값입니다. |
 | `earliestTouchdownUtc` | `SATISFIED`인 첫 구간의 시작. 만족 구간이 없으면 `null`입니다. |
+| `arrivalWindows[]` | 도착 선택 화면에 표시할 구간. 모든 후보지에서 `SATISFIED`이고 `endUtc - startUtc`가 요청한 표면 활동 시간(기본 48시간) 이상인 구간을 시간순으로 제공합니다. 한 행의 `startUtc`를 `launch-options?touchdownUtc=...`로 선택합니다. |
 | `candidates[]` | 만족 구간에서 접지 시각과 입력한 전이 조건 조합을 개별 평가한 결과. `proposedLandingUtc`가 접지 시각이며 `reasons`는 해당 후보의 판정 사유입니다. |
 
 `maxCandidates`는 기본 50개이며 1~10,000개로 지정할 수 있습니다. 다음 후보 평가가 이 상한을 넘으면 실행 상태 조회의 `overallResultStatus`가 `TRUNCATED`입니다. 이때도 전체 접지 구간과 일별 결과를 조회할 수 있습니다. 진행 중이거나 실패한 실행은 최초 접지 시각이 `null`이고 두 배열이 비므로, 빈 응답을 해석할 때는 먼저 `GET /api/v1/analyses/{runId}`의 `executionStatus`를 확인하세요.
@@ -269,6 +270,8 @@ function makeSkyTrack(data, bodyKey) {
 - **가시성 표시** — 표본 사이에서는 직전 원본 표본의 `visible`·`jointVisible`을 표시합니다. 첫 표본 전에는 판정을 보류합니다. 차폐 시각과 장기 평균에는 응답의 `nextTerrainOccultationUtc`와 `meanDailyVisibility`를 그대로 사용합니다.
 
 ## 첫 접지 시각 기준 발사장 후보
+
+사용자가 UTC 날짜나 표면 후보를 선택하는 화면은 [날짜별 발사·궤적·착륙 후 관측 연동 예시](touchdown-selection.md)를 참고하세요. 아래 표는 선택 파라미터를 생략한 요청에 적용됩니다.
 
 `GET /api/v1/analyses/{runId}/launch-options`에 착륙 기회 분석의 실행 ID를 전달합니다. 응답의 `data.landingSiteId`는 해당 실행의 달 후보지 PK이고, `data.touchdownUtc`는 해당 실행에서 표면 조건을 만족한 가장 이른 구간의 시작(UTC)입니다. `executionStatus`가 `SUCCEEDED`인 실행에서 조회할 수 있으며, 전체 결과가 `TRUNCATED`여도 저장된 접지 구간을 모두 대상으로 합니다.
 

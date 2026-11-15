@@ -13,7 +13,7 @@ import azas.domain.analysis.model.AnalysisType;
 import azas.domain.analysis.model.ExecutionStatus;
 import azas.domain.analysis.repository.AnalysisRunRepository;
 import azas.domain.analysis.repository.ObserverArchiveReader;
-import azas.domain.analysis.service.CandidateHistoryStore.SurfacePeriod;
+import azas.domain.analysis.service.TouchdownSelections.Surface;
 import azas.global.exception.BusinessException;
 import java.time.Duration;
 import java.time.Instant;
@@ -29,8 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PostLandingService {
     private final AnalysisRunRepository runs;
-    private final CandidateHistoryStore history;
-    private final AnalysisQueryService legacyResults;
+    private final TouchdownSelections selections;
     private final LandingSiteHorizon horizons;
     private final ObserverArchiveReader archive;
     private final MeanDailyVisibilityService visibility;
@@ -41,7 +40,7 @@ public class PostLandingService {
         if (run.getAnalysisType() != AnalysisType.DATE_OPPORTUNITIES) throw new BusinessException(AnalysisErrorCode.TYPE_MISMATCH);
         if (run.getExecutionStatus() != ExecutionStatus.SUCCEEDED) throw new BusinessException(AnalysisErrorCode.RUN_NOT_SUCCEEDED);
         var parameters = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters());
-        var period = candidatePeriod(runId, candidateId, parameters.has("request"));
+        var period = selections.byId(runId, candidateId, parameters.has("request"));
         if (period.touchdown().isBefore(DateOpportunityRequest.SEARCH_START) || period.end().isAfter(DateOpportunityRequest.ARCHIVE_END)) {
             throw new BusinessException(AnalysisErrorCode.OBSERVER_DATA_INCOMPLETE);
         }
@@ -54,31 +53,20 @@ public class PostLandingService {
         long start = period.touchdown().getEpochSecond() + (period.touchdown().getNano() == 0 ? 0 : 1);
         long first = start + Math.floorMod(-start, STEP_SECONDS);
         archive.scan(site.getId(), first, DateOpportunityRequest.ARCHIVE_END.getEpochSecond(), track::add);
-        return new PostLandingResponse(site.getSiteCode(), period.touchdown(), period.end(), STEP_SECONDS,
+        return new PostLandingResponse(site.getSiteCode(), period.id(), period.touchdown(), period.end(), STEP_SECONDS,
                 new Occultations(track.earthOcculted, track.sunOcculted), visibility.calculate(site.getId(), horizon),
                 observerHeight == referenceHeight ? "BODY_CENTER_LOCAL_TERRAIN" : LandingSiteHorizon.FIXED_BLOCKER_MODEL,
                 track.samples);
     }
 
-    private SurfacePeriod candidatePeriod(UUID runId, String candidateId, boolean hasStoredCandidates) {
-        if (hasStoredCandidates) {
-            return history.findPeriod(runId, candidateId)
-                    .orElseThrow(() -> new BusinessException(AnalysisErrorCode.SURFACE_CANDIDATE_NOT_FOUND));
-        }
-        // Pre-V6 runs expose candidates reconstructed from their original landing windows.
-        return legacyResults.legacyCandidates(runId).stream().filter(c -> c.candidateId().equals(candidateId))
-                .map(c -> new SurfacePeriod(c.proposedLandingUtc(), c.surfaceFinishUtc())).findFirst()
-                .orElseThrow(() -> new BusinessException(AnalysisErrorCode.SURFACE_CANDIDATE_NOT_FOUND));
-    }
-
     private static final class SurfaceTrack {
-        final SurfacePeriod period;
+        final Surface period;
         final List<Double> horizon;
         final List<Sample> samples = new ArrayList<>();
         Instant earthOcculted;
         Instant sunOcculted;
 
-        SurfaceTrack(SurfacePeriod period, List<Double> horizon) {
+        SurfaceTrack(Surface period, List<Double> horizon) {
             this.period = period;
             this.horizon = horizon;
         }

@@ -74,6 +74,7 @@ PK를 URL에서 받으므로 원본 CLI의 `candidateSiteIds`, `siteDeadlinesUtc
 | `landing_opportunity_result` | 후보 상한과 무관하게 전체 접지 가능 구간 |
 | `surface_candidate_result` | 실제로 평가한 개별 후보·전이 판정. 주요 수치·상태는 컬럼 |
 | `launch_option_batch` | 실행 당시 모델·가정·엔진 해시·접지 시각·계산 시각 |
+| `launch_touchdown_date` | 실행과 UTC 날짜에 대응하는 발사 후보 묶음 |
 | `launch_option_result` | 발사장별 좌표 사본과 후보. 후보가 없는 발사장도 행으로 보존 |
 | `trajectory_run` | 궤적 POST마다 새 UUID, 선택한 입력 사본·엔진 해시·상태·잔차·delta-v·출처 |
 | `trajectory_sample` | 궤적 실행별 순번·UTC·경과 초·위치 XYZ·속도 XYZ 컬럼 |
@@ -81,6 +82,7 @@ PK를 URL에서 받으므로 원본 CLI의 `candidateSiteIds`, `siteDeadlinesUtc
 신규 분석에서 표면 조건을 만족한 구간은 `landing_opportunity_result.decision_reasons`에 `SURFACE_CRITERIA_SATISFIED`를 저장합니다. API에서 이 구간의 판정은 `windows[].surfaceStatus`로 확인합니다. 개별 접지 후보의 `candidates[].reasons`는 별도 판정이며 전이 입력을 생략하면 `TRANSFER_INPUTS_MISSING`을 반환합니다. #34 적용 전에 저장된 구간의 사유는 소급 변경하지 않습니다.
 
 신규 분석은 완료 트랜잭션에서 발사 후보까지 저장합니다. 이후 카탈로그 좌표가 바뀌어도 같은 실행의 후보는 같습니다.
+V7부터 첫 접지 묶음은 빈 `selection_key`를 사용합니다. 선택한 다른 표면 후보의 발사 일정은 같은 실행의 발사장 좌표 사본으로 계산하고 별도의 키로 저장합니다. 날짜와 후보 연결은 같은 트랜잭션에서 저장합니다. 궤적 상세의 `surfaceCandidateId`는 당시 입력 사본에서 읽으며 V7 이전 궤적에는 `null`입니다.
 발사장 카탈로그가 비어 있으면 표면 분석은 성공하고 발사 배치는 `DATA_UNAVAILABLE`로 남습니다. 데이터를 넣은 뒤 새 분석을 요청하세요.
 
 V6 이전 실행은 당시 발사 후보·궤적이 저장되지 않았습니다. 기존 전체 구간에서 접지 후보를 읽는 호환 동작을 유지하고,
