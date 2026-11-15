@@ -101,6 +101,8 @@ Table analysis_run {
   created_at timestamptz [not null, default: `now()`]
   execution_started_at timestamptz
   execution_finished_at timestamptz
+  execution_owner uuid [note: '비동기 실행 소유 토큰. API로 생성한 실행에 설정']
+  execution_expires_at timestamptz [note: '대기 시간을 포함한 실행 만료. 만료된 작업만 실패 처리']
   indexes {
     (landing_site_id, created_at)
   }
