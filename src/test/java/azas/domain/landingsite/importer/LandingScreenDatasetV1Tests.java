@@ -97,6 +97,7 @@ class LandingScreenDatasetV1Tests {
             overrides.put(DIRECTORY + "metadata.json", JSON.writeValueAsBytes(metadata));
             assertThatThrownBy(() -> load(overrides)).hasMessageContaining("Unsupported metadata");
         }
+
         Map<String, byte[]> overrides = new HashMap<>();
         overrides.put(DIRECTORY + "metadata.json", text(DIRECTORY + "metadata.json")
                 .replace("\"observerHeightAboveSurfaceM\": 1", "\"observerHeightAboveSurfaceM\": 2")
@@ -136,13 +137,16 @@ class LandingScreenDatasetV1Tests {
         byte[] bytes = replacement.getBytes(StandardCharsets.UTF_8);
         overrides.put(path, bytes);
         Map<String, Object> registry = readMap("data/product_registry.json");
+
         for (Object item : (List<?>) registry.get("files")) {
             Map<String, Object> entry = (Map<String, Object>) item;
+
             if (path.equals(entry.get("path"))) {
                 entry.put("bytes", bytes.length);
                 entry.put("sha256", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
             }
         }
+
         overrides.put("data/product_registry.json", JSON.writeValueAsBytes(registry));
     }
 

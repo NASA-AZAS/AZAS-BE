@@ -8,9 +8,11 @@ public class BusinessException extends RuntimeException {
 
     public BusinessException(ErrorCode errorCode) {
         super(Objects.requireNonNull(errorCode).message());
+
         if (!errorCode.status().isError()) {
             throw new IllegalArgumentException("Business exceptions require an error HTTP status");
         }
+
         this.errorCode = errorCode;
     }
 

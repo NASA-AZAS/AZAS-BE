@@ -65,13 +65,16 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         RequestState state = (RequestState) request.getAttribute(STATE_ATTRIBUTE);
+
         if (state == null) {
             state = new RequestState(request, clock.getAsLong());
             request.setAttribute(STATE_ATTRIBUTE, state);
         }
+
         response.setHeader(REQUEST_ID_HEADER, state.requestId);
         String previousId = MDC.get(REQUEST_ID_MDC_KEY);
         MDC.put(REQUEST_ID_MDC_KEY, state.requestId);
+
         try {
             chain.doFilter(request, response);
         } catch (IOException | ServletException | RuntimeException | Error failure) {
@@ -94,6 +97,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         if (!state.listening.compareAndSet(false, true)) {
             return;
         }
+
         try {
             request.getAsyncContext().addListener(new AsyncListener() {
                 @Override
@@ -126,19 +130,25 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         if (!state.logged.compareAndSet(false, true)) {
             return;
         }
+
         long durationMs = TimeUnit.NANOSECONDS.toMillis(clock.getAsLong() - state.startedAt);
         int status = response.getStatus();
+
         if (state.failed && status < 400 && !response.isCommitted()) {
             // The container has not rendered an escaping exception yet.
             status = HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
         }
+
         boolean slow = durationMs >= slowRequestMs;
+
         if (state.healthCheck && status >= 200 && status < 300 && !slow) {
             return;
         }
+
         Level level = status >= 500 ? Level.ERROR : status >= 400 || slow ? Level.WARN : Level.INFO;
         String previousId = MDC.get(REQUEST_ID_MDC_KEY);
         MDC.put(REQUEST_ID_MDC_KEY, state.requestId);
+
         try {
             LOG.atLevel(level)
                     .addKeyValue("method", state.method)
@@ -161,14 +171,17 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
     private static String safeValue(String value, int limit) {
         StringBuilder result = new StringBuilder(Math.min(value.length(), limit));
+
         for (int index = 0; index < value.length() && index < limit; index++) {
             char character = value.charAt(index);
             result.append(Character.isISOControl(character) || character == '\u2028' || character == '\u2029'
                     ? '_' : character);
         }
+
         if (value.length() > limit) {
             result.append("...[truncated]");
         }
+
         return result.toString();
     }
 

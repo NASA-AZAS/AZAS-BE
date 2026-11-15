@@ -17,13 +17,16 @@ public final class LandingScreenV1Importer {
         if (connection.getAutoCommit()) {
             throw new IllegalStateException("Terrain import requires a caller-owned transaction");
         }
+
         Long existingId = existingDataset(connection, dataset.sha256());
+
         if (existingId != null) {
             verifyCounts(connection, existingId);
             return;
         }
 
         long datasetId;
+
         try (PreparedStatement statement = connection.prepareStatement("""
                 insert into terrain_dataset
                     (dataset_code, dataset_version, dataset_sha256, coordinate_reference_frame,
@@ -35,6 +38,7 @@ public final class LandingScreenV1Importer {
             statement.setString(2, LandingScreenDatasetV1.VERSION);
             statement.setString(3, dataset.sha256());
             statement.setString(4, dataset.sourceMetadata());
+
             try (ResultSet result = statement.executeQuery()) {
                 result.next();
                 datasetId = result.getLong(1);
@@ -54,6 +58,7 @@ public final class LandingScreenV1Importer {
                 values (?, ?, ?, ?, ?, ?)
                 """)) {
             int pending = 0;
+
             for (LandingScreenDatasetV1.Site input : dataset.sites()) {
                 site.setLong(1, datasetId);
                 site.setString(2, input.code());
@@ -64,27 +69,34 @@ public final class LandingScreenV1Importer {
                 site.setDouble(7, input.squareSide());
                 site.setString(8, input.screeningStatus());
                 long siteId;
+
                 try (ResultSet result = site.executeQuery()) {
                     result.next();
                     siteId = result.getLong(1);
                 }
+
                 for (int index = 0; index < input.samples().length; index++) {
                     sample.setLong(1, siteId);
                     sample.setShort(2, (short) index);
+
                     for (int column = 0; column < 4; column++) {
                         sample.setDouble(column + 3, input.samples()[index][column]);
                     }
+
                     sample.addBatch();
+
                     if (++pending == BATCH_SIZE) {
                         sample.executeBatch();
                         pending = 0;
                     }
                 }
             }
+
             if (pending > 0) {
                 sample.executeBatch();
             }
         }
+
         verifyCounts(connection, datasetId);
     }
 
@@ -95,13 +107,16 @@ public final class LandingScreenV1Importer {
                 """)) {
             statement.setString(1, LandingScreenDatasetV1.CODE);
             statement.setString(2, LandingScreenDatasetV1.VERSION);
+
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next()) {
                     return null;
                 }
+
                 if (!expectedHash.equals(result.getString(2))) {
                     throw new IllegalStateException("Existing terrain version has a different hash; do not overwrite it");
                 }
+
                 return result.getLong(1);
             }
         }
@@ -115,14 +130,17 @@ public final class LandingScreenV1Importer {
                 """)) {
             statement.setLong(1, datasetId);
             int sites = 0;
+
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
                     sites++;
+
                     if (result.getInt(2) != LandingScreenDatasetV1.SAMPLES_PER_SITE) {
                         throw new IllegalStateException("Incomplete existing horizon samples");
                     }
                 }
             }
+
             if (sites != LandingScreenDatasetV1.SITE_COUNT) {
                 throw new IllegalStateException("Incomplete existing candidate sites");
             }
