@@ -61,5 +61,18 @@ class TransferSearchTests {
         assertThat(offline.candidates().getFirst().status()).isEqualTo("UNKNOWN");
         assertThat(offline.candidates().getFirst().reasons()).contains("VECTOR_ARCHIVE_UNAVAILABLE");
         verifyNoInteractions(client);
+
+        // Crossing the search-start boundary changes EXCLUDED to UNKNOWN, so refine only that interval.
+        tree.put("timeStepMinutes", 120).put("maxCandidates", 10);
+        tree.putObject("refinementPolicy").put("minStepMinutes", 30).put("maxDepth", 2);
+        var refined = new TransferSearch(client).search(List.of(new DateOpportunityEngine.Window(
+                landing.minusSeconds(3600), landing.plusSeconds(3600), landing.plusSeconds(7200))),
+                json.treeToValue(tree, DateOpportunityRequest.class));
+        assertThat(refined.candidates()).extracting(TransferSearch.Candidate::landingUtc)
+                .containsExactly(landing.minusSeconds(3600), landing.plusSeconds(3600), landing, landing.minusSeconds(1800));
+        assertThat(refined.candidates()).extracting(TransferSearch.Candidate::status)
+                .containsExactly("EXCLUDED", "UNKNOWN", "UNKNOWN", "EXCLUDED");
+        assertThat(refined.truncated()).isFalse();
+        verifyNoInteractions(client);
     }
 }

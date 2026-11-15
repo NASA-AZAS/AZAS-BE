@@ -94,8 +94,9 @@ public class AnalysisJobs {
             finally { task.cancel(true); Thread.currentThread().interrupt(); }
             throw new AnalysisEngineException("ANALYSIS_INTERRUPTED", exception);
         } catch (java.util.concurrent.ExecutionException exception) {
-            work.fail().accept("ANALYSIS_FAILED");
-            throw new AnalysisEngineException("ANALYSIS_FAILED", exception.getCause());
+            String code = exception.getCause() instanceof AnalysisEngineException failure ? failure.code() : "ANALYSIS_FAILED";
+            work.fail().accept(code);
+            throw new AnalysisEngineException(code, exception.getCause());
         } catch (java.util.concurrent.CancellationException exception) {
             work.fail().accept("ANALYSIS_INTERRUPTED");
             throw new AnalysisEngineException("ANALYSIS_INTERRUPTED", exception);
