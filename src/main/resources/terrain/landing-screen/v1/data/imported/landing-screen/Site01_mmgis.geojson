@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -129.964439,
+          -89.6307206
+        ]
+      },
+      "properties": {
+        "site": "Site01",
+        "elevation_m": 863.783,
+        "observer_height_m": 1,
+        "square_side_m": 200
+      }
+    }
+  ]
+}

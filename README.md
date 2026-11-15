@@ -4,6 +4,10 @@ NASA Space Apps의 Lunar Landing Site Navigator API입니다. Java 21, Spring Bo
 Gradle Wrapper 9.8.2를 사용합니다. 협업 규칙은
 [조직 기여 가이드](https://github.com/NASA-AZAS/.github/blob/main/CONTRIBUTING.md)를 참고하세요.
 
+작업 브랜치는 최신 `dev`에서 분기하고 PR도 `dev`를 대상으로 엽니다.
+`dev` 대상 PR은 CI 검사를 수행하며, `dev` 병합만으로 운영 배포하지 않습니다.
+운영 반영이 필요할 때 `dev → main` PR로 릴리스합니다. `main`의 자동·수동 배포 흐름은 유지합니다.
+
 ## 로컬 실행
 
 JDK 21과 Docker Desktop을 준비하고 저장소 루트에서 실행합니다.
@@ -53,6 +57,9 @@ Gradle group과 프로젝트명은 `azas`이며, Java 기본 패키지도 `azas`
 ```text
 src/main/java/azas/
   AzasApplication.java
+  domain/
+    landingsite/        # 지형 데이터셋·후보지·지평선 표본, CSV 적재
+    analysis/           # 분석 실행·일별 요약·가시 구간·착륙 기회 저장 모델
   global/
     config/             # CORS, OpenAPI, 앱 설정
     health/             # /health
@@ -61,6 +68,8 @@ src/main/java/azas/
 src/main/resources/
   application.yaml
   db/migration/         # Flyway 업무 SQL
+  terrain/              # 버전 고정 원본 CSV와 검증 메타데이터
+src/main/java/db/migration/ # Flyway Java 데이터 적재
 src/test/               # 실제 PostgreSQL 기반 통합 테스트
 compose.local.yaml      # 로컬 PostgreSQL 전용
 docker/postgres.env     # 로컬·CI PostgreSQL 이미지 digest
@@ -72,6 +81,8 @@ scripts/run-local.ps1   # 로컬 DB 시작과 환경변수 주입
 기능 코드는 `azas.domain.<기능명>` 아래에 추가합니다.
 공통 응답·예외 처리 사용법은 [API 개발 규칙](docs/api-conventions.md),
 JPA·Flyway 사용법은 [DB 개발 가이드](docs/database.md)를 참고하세요.
+확정된 7개 테이블은 [DBML ERD](docs/erd.dbml), 후보지 27개·지평선 표본 97,200개의
+초기 적재와 조회 방법은 [지형 데이터 가이드](docs/terrain-data.md)에 정리되어 있습니다.
 요청 ID와 텍스트/JSON 로그 설정은 [로깅 가이드](docs/logging.md)에 정리되어 있습니다.
 앱 설정은 `application.yaml`, `AZAS_`와 `SPRING_DATASOURCE_` 환경변수를 사용합니다.
 `AZAS_CORS_ORIGINS`는 JSON 배열이며 기본값은 빈 목록입니다.
