@@ -106,10 +106,9 @@ public class TrajectoryHistoryStore {
         var rows = jdbc.query("select * from trajectory_run where trajectory_run_id = ? and analysis_run_id = ?", (rs, row) -> {
             Input input = JSON.readValue(rs.getString("input_snapshot"), Input.class);
             var c = input.candidate();
-            var samples = jdbc.query("select * from trajectory_sample where trajectory_run_id = ? order by sample_index", (sample, n) ->
-                    new LaunchTrajectoryResponse.Sample(instant(sample, "observed_at"), sample.getLong("elapsed_seconds"),
-                            new double[]{sample.getDouble("position_x_km"), sample.getDouble("position_y_km"), sample.getDouble("position_z_km")},
-                            new double[]{sample.getDouble("velocity_x_km_s"), sample.getDouble("velocity_y_km_s"), sample.getDouble("velocity_z_km_s")}), trajectoryId);
+            String state = rs.getString("execution_status");
+            // Samples commit with SUCCEEDED. An earlier snapshot must not pick them up in a second query.
+            List<LaunchTrajectoryResponse.Sample> samples = "SUCCEEDED".equals(state) ? samples(trajectoryId) : List.of();
             return LaunchTrajectoryResponse.builder().analysisRunId(analysisId).landingSiteId(input.landingSiteId())
                     .launchSiteId(input.site().launchSiteId()).launchSiteCode(input.site().launchSiteCode()).candidateId(c.candidateId())
                     .status(rs.getString("status")).reason(rs.getString("reason")).lambertStatus(rs.getString("solver_status"))
@@ -119,11 +118,18 @@ public class TrajectoryHistoryStore {
                     .nominalSampleStepSeconds(rs.getInt("nominal_sample_step_seconds")).positionResidualKm((Double) rs.getObject("position_residual_km"))
                     .tliDeltaVKmS((Double) rs.getObject("tli_delta_v_km_s")).samples(samples)
                     .sourceRecords(List.of(JSON.readValue(rs.getString("source_records"), AnalysisEngine.Source[].class)))
-                    .trajectoryRunId(trajectoryId).executionStatus(rs.getString("execution_status")).createdAt(instant(rs, "created_at"))
+                    .trajectoryRunId(trajectoryId).executionStatus(state).createdAt(instant(rs, "created_at"))
                     .startedAt(instant(rs, "started_at"))
                     .finishedAt(instant(rs, "finished_at")).engineSha256(rs.getString("engine_sha256")).build();
         }, trajectoryId, analysisId);
         if (rows.isEmpty()) throw new BusinessException(AnalysisErrorCode.TRAJECTORY_NOT_FOUND);
         return rows.getFirst();
+    }
+
+    private List<LaunchTrajectoryResponse.Sample> samples(UUID trajectoryId) {
+        return jdbc.query("select * from trajectory_sample where trajectory_run_id = ? order by sample_index", (rs, n) ->
+                new LaunchTrajectoryResponse.Sample(instant(rs, "observed_at"), rs.getLong("elapsed_seconds"),
+                        new double[]{rs.getDouble("position_x_km"), rs.getDouble("position_y_km"), rs.getDouble("position_z_km")},
+                        new double[]{rs.getDouble("velocity_x_km_s"), rs.getDouble("velocity_y_km_s"), rs.getDouble("velocity_z_km_s")}), trajectoryId);
     }
 }
