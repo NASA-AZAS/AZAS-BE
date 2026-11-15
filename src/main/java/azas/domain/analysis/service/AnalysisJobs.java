@@ -1,8 +1,10 @@
 package azas.domain.analysis.service;
 
 import azas.domain.analysis.dto.AnalysisRequest;
+import azas.domain.analysis.dto.DateOpportunityRequest;
 import azas.domain.analysis.engine.AnalysisEngine;
 import azas.domain.analysis.engine.AnalysisEngineException;
+import azas.domain.analysis.engine.DateOpportunityEngine;
 import azas.domain.analysis.exception.AnalysisErrorCode;
 import azas.global.exception.BusinessException;
 import jakarta.annotation.PostConstruct;
@@ -10,6 +12,8 @@ import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
@@ -29,14 +33,16 @@ public class AnalysisJobs {
     private static final Logger LOG = LoggerFactory.getLogger(AnalysisJobs.class);
     private final AnalysisStore store;
     private final AnalysisEngine engine;
+    private final DateOpportunityEngine opportunities;
     private final Semaphore admission = new Semaphore(3);
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(2), Thread.ofPlatform().name("analysis-worker-", 0).factory());
     private final ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1,
             Thread.ofPlatform().name("analysis-deadlines").factory());
 
-    public AnalysisJobs(AnalysisStore store, AnalysisEngine engine) {
+    public AnalysisJobs(AnalysisStore store, AnalysisEngine engine, DateOpportunityEngine opportunities) {
         this.store = store; this.engine = engine;
+        this.opportunities = opportunities;
         timer.setRemoveOnCancelPolicy(true);
     }
 
@@ -52,6 +58,17 @@ public class AnalysisJobs {
     }
 
     public UUID submit(long siteId, AnalysisRequest request) {
+        return schedule(() -> store.create(siteId, request, engine.identity()),
+                prepared -> store.complete(prepared, engine.analyze(prepared.input())));
+    }
+
+    public UUID submitOpportunities(long siteId, DateOpportunityRequest request) {
+        return schedule(() -> store.createOpportunities(siteId, request, opportunities.identity()),
+                prepared -> store.completeOpportunities(prepared,
+                        opportunities.analyze(siteId, prepared.input(), request.durationSeconds())));
+    }
+
+    private UUID schedule(Supplier<AnalysisStore.Prepared> prepare, Predicate<AnalysisStore.Prepared> calculateAndSave) {
         if (!admission.tryAcquire()) {
             throw new BusinessException(AnalysisErrorCode.BUSY);
         }
@@ -59,7 +76,7 @@ public class AnalysisJobs {
         AnalysisStore.Prepared prepared;
 
         try {
-            prepared = store.create(siteId, request, engine.identity());
+            prepared = prepare.get();
         } catch (RuntimeException exception) {
             admission.release();
             throw exception;
@@ -68,7 +85,7 @@ public class AnalysisJobs {
         AtomicReference<ScheduledFuture<?>> deadlineReference = new AtomicReference<>();
         var task = new FutureTask<Void>(() -> {
             try (var ignored = MDC.putCloseable("requestId", requestId)) {
-                execute(prepared);
+                execute(prepared, calculateAndSave);
             }
 
             return null;
@@ -110,12 +127,11 @@ public class AnalysisJobs {
         return prepared.id();
     }
 
-    private void execute(AnalysisStore.Prepared prepared) {
+    private void execute(AnalysisStore.Prepared prepared, Predicate<AnalysisStore.Prepared> calculateAndSave) {
         try {
             if (!store.start(prepared)) return;
             LOG.atInfo().addKeyValue("analysisRunId", prepared.id()).log("Analysis started");
-            var result = engine.analyze(prepared.input());
-            boolean saved = store.complete(prepared, result);
+            boolean saved = calculateAndSave.test(prepared);
             LOG.atInfo().addKeyValue("analysisRunId", prepared.id()).addKeyValue("saved", saved).log("Analysis finished");
         } catch (RuntimeException exception) {
             String code = exception instanceof AnalysisEngineException failure ? failure.code() : "ANALYSIS_FAILED";

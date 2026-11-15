@@ -12,6 +12,10 @@ import java.util.UUID;
 public final class AnalysisResponses {
     private AnalysisResponses() {}
     public record Accepted(UUID analysisRunId, String executionStatus) {}
+    public record TouchdownWindow(Instant startUtc, Instant endUtc, Instant supportEndUtc, String surfaceStatus) {}
+    public record SurfaceCandidate(String candidateId, Instant proposedLandingUtc, Instant surfaceFinishUtc) {}
+    public record Opportunities(UUID analysisRunId, Instant earliestTouchdownUtc, List<TouchdownWindow> windows,
+            List<SurfaceCandidate> candidates) {}
     public record Run(UUID analysisRunId, Long landingSiteId, String analysisType, String executionStatus,
             String overallResultStatus, Instant analysisStartAt, Instant analysisEndAt, int sampleIntervalMinutes,
             String engineVersion, String engineSha256, Instant createdAt, Instant executionStartedAt,

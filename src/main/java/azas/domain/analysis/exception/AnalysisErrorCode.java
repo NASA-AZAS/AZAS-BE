@@ -7,6 +7,7 @@ public enum AnalysisErrorCode implements ErrorCode {
     SITE_NOT_FOUND(HttpStatus.NOT_FOUND, "LANDING_SITE_NOT_FOUND", "후보지를 찾을 수 없습니다."),
     DATASET_NOT_FOUND(HttpStatus.NOT_FOUND, "TERRAIN_DATASET_NOT_FOUND", "지형 데이터셋을 찾을 수 없습니다."),
     RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "ANALYSIS_NOT_FOUND", "분석 실행을 찾을 수 없습니다."),
+    TYPE_MISMATCH(HttpStatus.CONFLICT, "ANALYSIS_TYPE_MISMATCH", "착륙 기회 분석 실행을 지정해 주세요."),
     BUSY(HttpStatus.TOO_MANY_REQUESTS, "ANALYSIS_CAPACITY_EXCEEDED", "분석 요청이 많습니다. 잠시 후 다시 요청해 주세요."),
     INVALID_TERRAIN(HttpStatus.UNPROCESSABLE_ENTITY, "ANALYSIS_TERRAIN_INVALID", "분석 가능한 지형 데이터가 아닙니다.");
 

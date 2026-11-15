@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 import azas.domain.analysis.dto.AnalysisRequest;
 import azas.domain.analysis.engine.AnalysisEngine;
 import azas.domain.analysis.engine.AnalysisEngineException;
+import azas.domain.analysis.engine.DateOpportunityEngine;
 import azas.global.exception.BusinessException;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test;
 class AnalysisJobsTests {
     private final AnalysisStore store = mock(AnalysisStore.class);
     private final AnalysisEngine engine = mock(AnalysisEngine.class);
+    private final DateOpportunityEngine opportunities = mock(DateOpportunityEngine.class);
     private final AnalysisRequest request = new AnalysisRequest(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 1));
 
     @Test void allowsOneWorkerAndTwoWaitingJobsAndRejectsBeforeLoadingMoreTerrain() throws Exception {
@@ -38,7 +40,7 @@ class AnalysisJobsTests {
 
             return new AnalysisEngine.Output("PARTIAL", List.of(), List.of(), List.of());
         });
-        var jobs = new AnalysisJobs(store, engine);
+        var jobs = new AnalysisJobs(store, engine, opportunities);
 
         try {
             jobs.submit(1, request);
@@ -69,7 +71,7 @@ class AnalysisJobsTests {
 
             throw new AssertionError("Expected deadline cancellation");
         });
-        var jobs = new AnalysisJobs(store, engine);
+        var jobs = new AnalysisJobs(store, engine, opportunities);
 
         try {
             jobs.submit(1, request);
@@ -82,7 +84,7 @@ class AnalysisJobsTests {
 
     @Test void failedValidationReleasesAdmissionForLaterRequests() {
         when(store.create(anyLong(), any(), any())).thenThrow(new IllegalArgumentException("bad input"));
-        var jobs = new AnalysisJobs(store, engine);
+        var jobs = new AnalysisJobs(store, engine, opportunities);
 
         try {
             for (int i = 0; i < 5; i++) assertThatThrownBy(() -> jobs.submit(1, request)).hasMessage("bad input");
