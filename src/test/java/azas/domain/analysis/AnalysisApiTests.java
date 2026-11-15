@@ -12,12 +12,16 @@ import azas.domain.analysis.engine.AnalysisEngineException;
 import azas.domain.analysis.engine.HorizonsClient;
 import azas.support.PostgresIntegrationTest;
 import java.time.Duration;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -136,6 +140,144 @@ class AnalysisApiTests extends PostgresIntegrationTest {
         assertThat(await(id).path("executionStatus").asString()).isEqualTo("SUCCEEDED");
         mvc.perform(get("/api/v1/analyses/" + id + "/daily-results"))
                 .andExpect(jsonPath("$.data.length()").value(31));
+    }
+
+    @Test void surfaceSearchUsesTheArchiveAndKeepsWindowsBeyondTheCandidateLimit() throws Exception {
+        long site = siteId();
+        // Two visible runs, with the second beginning after candidate 50 of the first.
+        jdbc.update("""
+                insert into observer_sample
+                select ?, t, 0, case when t = timestamptz '2027-01-01 12:00Z' then -90 else 90 end, 0, 90
+                from generate_series(timestamptz '2027-01-01 00:00Z', timestamptz '2027-01-02 00:30Z', interval '10 minutes') t
+                """, site);
+        try {
+            UUID id = submitSurface(site, "2027-01-02T00:33:00Z", "0.5");
+            var run = await(id);
+            assertThat(run.path("overallResultStatus").asString()).isEqualTo("TRUNCATED");
+            assertThat(run.path("analysisType").asString()).isEqualTo("DATE_OPPORTUNITIES");
+            var report = surfaceReport(id);
+            assertThat(report.path("earliestTouchdownUtc").asString()).isEqualTo("2027-01-01T00:00:00Z");
+            assertThat(report.path("windows").size()).isEqualTo(2);
+            assertThat(report.path("windows").get(1).path("endUtc").asString()).isEqualTo("2027-01-02T00:00:00Z");
+            assertThat(report.path("candidates").size()).isEqualTo(50);
+            var days = dailyResults(id);
+            assertThat(days.size()).isEqualTo(2);
+            assertThat(days.get(0).path("sunVisibleTimeRatio").asDouble()).isEqualTo(143.0 / 144);
+            assertThat(days.get(1).path("evaluatedPeriodEndAt").asString()).isEqualTo("2027-01-02T00:33:00Z");
+
+            id = submitSurface(site, "2027-01-01T00:30:00Z", "0.5");
+            assertThat(await(id).path("overallResultStatus").asString()).isEqualTo("PARTIAL");
+            assertThat(surfaceReport(id).path("windows").get(0).path("endUtc").asString()).isEqualTo("2027-01-01T00:00:00Z");
+
+            id = submitSurface(site, "2027-01-01T00:30:00Z", "0.25");
+            await(id);
+            var fractional = surfaceReport(id).path("candidates");
+            assertThat(fractional.size()).isEqualTo(3);
+            assertThat(fractional.get(2).path("proposedLandingUtc").asString()).isEqualTo("2027-01-01T00:15:00Z");
+
+            id = submitSurface(site, "2027-01-01T08:40:00Z", "0.5");
+            assertThat(await(id).path("overallResultStatus").asString()).isEqualTo("PARTIAL");
+            assertThat(surfaceReport(id).path("candidates").size()).isEqualTo(50);
+
+            id = submitSurface(site, "2027-01-01", "48");
+            assertThat(await(id).path("executionStatus").asString()).isEqualTo("SUCCEEDED");
+            assertThat(surfaceReport(id).path("earliestTouchdownUtc").isNull()).isTrue();
+
+            jdbc.update("delete from observer_sample where landing_site_id = ? and observed_at = '2027-01-01T00:10Z'", site);
+            id = submitSurface(site, "2027-01-01", "1");
+            assertThat(await(id).path("failureCode").asString()).isEqualTo("OBSERVER_DATA_INCOMPLETE");
+            assertThat(dailyResults(id).size()).isZero();
+            verifyNoInteractions(horizons);
+        } finally {
+            jdbc.update("delete from observer_sample where landing_site_id = ?", site);
+        }
+    }
+
+    @Test void rejectsInvalidSurfaceRequestsBeforeStartingAJob() throws Exception {
+        for (String body : java.util.List.of(
+                "{\"missionDeadlineUtc\":\"2030-01-01\"}",
+                "{\"missionDeadlineUtc\":\"2027-01-01T00:00:00Z\"}",
+                "{\"missionDeadlineUtc\":\"2027-01-01\",\"surfaceDurationHours\":0.001}")) {
+            mvc.perform(post("/api/v1/landing-sites/" + siteId() + "/date-opportunities")
+                    .contentType("application/json").content(body)).andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "LLSN_VER2_HOME", matches = ".+")
+    void surfaceSearchMatchesTheOriginalCliForSite01(@TempDir Path scratch) throws Exception {
+        Path module = Path.of(System.getenv("LLSN_VER2_HOME")).toAbsolutePath();
+        var process = new ProcessBuilder("java", "-jar", module.resolve("llsn.jar").toString(), "date-opportunities",
+                "--offline", "--site", "Site01", "--hours", "48", "--deadline", "2027-01-31", "--output", scratch.toString())
+                .redirectErrorStream(true).redirectOutput(scratch.resolve("cli.log").toFile()).start();
+        try {
+            assertThat(process.waitFor(90, java.util.concurrent.TimeUnit.SECONDS)).as("offline CLI completed").isTrue();
+            assertThat(process.exitValue()).as("CLI exit code (log: %s)", scratch.resolve("cli.log")).isEqualTo(2);
+        } finally {
+            process.destroyForcibly();
+        }
+        var original = json.readTree(Files.readString(scratch.resolve("date_opportunities.json")));
+        var expected = original.path("siteReports").get(0);
+        long site = siteId();
+        // Load only January's 4,464 source rows into this suite's disposable PostgreSQL.
+        try (var lines = Files.lines(module.resolve("data/observer-2027-2029/Site01.csv"))) {
+            var january = lines.skip(1).takeWhile(line -> line.startsWith("2027-01-")).toList();
+            assertThat(january).hasSize(4464);
+            jdbc.batchUpdate("insert into observer_sample values (?, ?::timestamptz, ?, ?, ?, ?)", january, 512,
+                    (statement, line) -> {
+                        String[] fields = line.split(",");
+                        statement.setLong(1, site);
+                        statement.setString(2, fields[0]);
+                        for (int i = 1; i <= 4; i++) statement.setDouble(i + 2, Double.parseDouble(fields[i]));
+                    });
+            UUID id = submitSurface(site, "2027-01-31", "48");
+            assertThat(await(id).path("overallResultStatus")).isEqualTo(original.path("status"));
+            var actual = surfaceReport(id);
+            assertThat(actual.path("earliestTouchdownUtc")).isEqualTo(expected.path("earliestTouchdownUtc"));
+            assertThat(actual.path("windows").size()).isEqualTo(expected.path("windows").size());
+            for (int i = 0; i < actual.path("windows").size(); i++) {
+                for (String field : java.util.List.of("startUtc", "endUtc", "supportEndUtc", "surfaceStatus")) {
+                    assertThat(actual.path("windows").get(i).path(field)).isEqualTo(expected.path("windows").get(i).path(field));
+                }
+            }
+            assertThat(actual.path("candidates").size()).isEqualTo(original.path("candidates").size());
+            for (int i = 0; i < actual.path("candidates").size(); i++) {
+                assertThat(actual.path("candidates").get(i).path("proposedLandingUtc"))
+                        .isEqualTo(original.path("candidates").get(i).path("proposedLandingUtc"));
+            }
+            var days = dailyResults(id);
+            assertThat(days.size()).isEqualTo(31);
+            for (int i = 0; i < days.size(); i++) {
+                var reference = expected.path("dailyVisibility").get(i);
+                assertThat(days.get(i).path("analysisDate")).isEqualTo(reference.path("dateUtc"));
+                for (String body : java.util.List.of("sun", "earth")) {
+                    assertThat(days.get(i).path(body + "VisibleTimeRatio").asDouble())
+                            .isEqualTo(reference.path(body).path("visibleFraction").asDouble());
+                }
+            }
+            verifyNoInteractions(horizons);
+        } finally {
+            jdbc.update("delete from observer_sample where landing_site_id = ?", site);
+        }
+    }
+
+    private UUID submitSurface(long site, String deadline, String hours) throws Exception {
+        String body = json.writeValueAsString(java.util.Map.of("missionDeadlineUtc", deadline,
+                "surfaceDurationHours", new java.math.BigDecimal(hours)));
+        var response = mvc.perform(post("/api/v1/landing-sites/" + site + "/date-opportunities")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isAccepted()).andReturn().getResponse();
+        return UUID.fromString(json.readTree(response.getContentAsString()).path("data").path("analysisRunId").asString());
+    }
+
+    private JsonNode surfaceReport(UUID id) throws Exception {
+        return json.readTree(mvc.perform(get("/api/v1/analyses/" + id + "/date-opportunities"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+    }
+
+    private JsonNode dailyResults(UUID id) throws Exception {
+        return json.readTree(mvc.perform(get("/api/v1/analyses/" + id + "/daily-results"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
     }
 
     private long siteId() { return jdbc.queryForObject("select landing_site_id from landing_site where site_code = 'Site01'", Long.class); }

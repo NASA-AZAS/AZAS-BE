@@ -98,7 +98,7 @@ public final class VisibilityCalculator {
         return List.copyOf(days);
     }
 
-    private static final class Accumulator {
+    static final class Accumulator {
         final LocalDate date;
         final Instant start;
         Instant end;

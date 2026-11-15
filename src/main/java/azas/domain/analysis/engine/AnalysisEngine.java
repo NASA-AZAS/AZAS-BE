@@ -21,6 +21,17 @@ public interface AnalysisEngine {
     record Day(LocalDate date, Instant start, Instant end, String resultStatus, String terrainCoverage,
                List<String> qualityFlags, Metrics sun, Metrics earth, Metrics joint, List<Window> windows) {
         public Day { windows = List.copyOf(windows); qualityFlags = List.copyOf(qualityFlags); }
+
+        static Day localHorizon(VisibilityCalculator.Day day) {
+            return new Day(day.date(), day.start(), day.end(), "PARTIAL", "LOCAL_HORIZON_ONLY",
+                    List.of("DISTANT_TERRAIN_NOT_EVALUATED"), metrics(day.sun()), metrics(day.earth()), metrics(day.joint()),
+                    day.windows().stream().map(window -> new Window(window.body().name(), window.start(), window.end(),
+                            window.precisionSeconds())).toList());
+        }
+
+        private static Metrics metrics(VisibilityCalculator.Metrics metrics) {
+            return new Metrics(metrics.visibleRatio(), metrics.knownRatio(), metrics.longestOccultationHours());
+        }
     }
 
     record Source(int target, String url, String responseSha256, Instant retrievedAt) {}
