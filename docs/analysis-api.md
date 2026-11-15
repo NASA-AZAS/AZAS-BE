@@ -194,3 +194,8 @@ $env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djavax.net.ssl.trustStoreType=
 계산에는 달 도착 시각의 JPL Horizons 지구·달 VECTORS를 사용합니다. `sourceRecords`에는 검증한 응답의 대상, 조회 URL, 시각, SHA-256을 담습니다. `PRELIMINARY_EARTH_TWO_BODY` 모델의 도착 목표는 달 중심에서 지구 방향으로 2,000 km 떨어진 점입니다. `positionResidualKm`는 목표에 대한 전파 오차, `tliDeltaVKmS`는 주차 궤도 속도에서 전이 속도로 바꾸는 데 필요한 속도 변화량입니다. 예비 모델의 `launchVerified`와 `trajectoryVerified`는 모두 `false`입니다.
 
 Kennedy 예제 `Kennedy-1799883120`은 `2027-01-14T01:32:00Z`부터 `2027-01-18T22:10:00Z`까지 701개 표본을 반환합니다. 표면 접지는 `2027-01-19T04:10:00Z`이며, 표본 구간은 달 도착에서 끝납니다.
+
+
+## 원본 옵션 및 저장된 실행 기록
+
+추가 요청 옵션, 발사 후보 고정, 궤적 실행 조회, V6 이전 결과 호환 방식은 [분석 옵션과 실행 기록](analysis-history.md)을 참고하세요.

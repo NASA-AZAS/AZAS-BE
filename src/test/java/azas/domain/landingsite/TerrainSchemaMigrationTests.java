@@ -19,7 +19,7 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
         flyway.migrate();
 
         try (Connection connection = connect(database)) {
-            for (String table : new String[] {"terrain_dataset", "landing_site", "horizon_sample", "observer_sample", "launch_site"}) {
+            for (String table : new String[] {"terrain_dataset", "landing_site", "horizon_sample", "observer_sample", "launch_site", "surface_candidate_result", "launch_option_batch", "launch_option_result", "trajectory_run", "trajectory_sample"}) {
                 assertThat(count(connection, table)).isZero();
             }
         }
@@ -69,7 +69,7 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
         }
 
         Flyway current = flyway(database);
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(3); // V3 lease, V4 observations, V5 launch sites
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(4); // V3 lease, V4 observations, V5 launch sites, V6 analysis history
         assertThat(current.validateWithResult().validationSuccessful).isTrue();
         assertThat(current.migrate().migrationsExecuted).isZero();
 
@@ -84,6 +84,57 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
                 result.next();
                 assertThat(result.getDouble(1)).isEqualTo(123.45);
             }
+        }
+    }
+
+    @Test
+    void v6PreservesV5AnalysisHistoryAndAllAppliedChecksums() throws Exception {
+        String database = createDatabase();
+        Flyway.configure().dataSource(url(database), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .target("5").load().migrate();
+        TerrainTestData.copyInto(POSTGRES, database);
+        String beforeRun, beforeWindow, beforeChecksums;
+        try (Connection connection = connect(database); var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    insert into analysis_run (analysis_run_id, landing_site_id, analysis_type, execution_status,
+                        analysis_start_at, analysis_end_at, sample_interval_minutes, mission_due_date, mission_deadline_at,
+                        analysis_parameters, calculation_parameters_sha256, engine_version, engine_sha256)
+                    values ('00000000-0000-0000-0000-000000000006', 1, 'DATE_OPPORTUNITIES', 'SUCCEEDED',
+                        '2027-01-01T00:00Z', '2027-02-01T00:00Z', 10, '2027-01-31', '2027-02-01T00:00Z',
+                        '{"maxCandidates":50}', repeat('a',64), 'legacy-v5', repeat('b',64))
+                    """);
+            statement.executeUpdate("""
+                    insert into landing_opportunity_result (analysis_run_id, opportunity_code, opportunity_status,
+                        surface_condition_status, terrain_coverage_status, landing_window_start_at, landing_window_end_at,
+                        proposed_landing_at, surface_activity_finished_at, deadline_satisfied, trajectory_solver_status,
+                        trajectory_verified, calculation_model_level, provenance_id)
+                    values ('00000000-0000-0000-0000-000000000006','legacy-W1','ENVIRONMENT_ONLY','SATISFIED',
+                        'LOCAL_HORIZON_ONLY','2027-01-19T00:00Z','2027-01-20T00:00Z','2027-01-19T00:00Z',
+                        '2027-01-21T00:00Z',true,'NOT_EVALUATED',false,'ENVIRONMENT_ONLY',repeat('c',64))
+                    """);
+            beforeRun = scalar(connection, "select row_to_json(t)::text from analysis_run t");
+            beforeWindow = scalar(connection, "select row_to_json(t)::text from landing_opportunity_result t");
+            beforeChecksums = scalar(connection, "select string_agg(version || ':' || checksum, ',' order by installed_rank) from flyway_schema_history");
+        }
+        var current = flyway(database);
+        assertThat(current.migrate().migrationsExecuted).isOne();
+        assertThat(current.validateWithResult().validationSuccessful).isTrue();
+        assertThat(current.migrate().migrationsExecuted).isZero();
+        try (Connection connection = connect(database)) {
+            assertThat(scalar(connection, "select row_to_json(t)::text from analysis_run t")).isEqualTo(beforeRun);
+            assertThat(scalar(connection, "select row_to_json(t)::text from landing_opportunity_result t")).isEqualTo(beforeWindow);
+            assertThat(scalar(connection, "select string_agg(version || ':' || checksum, ',' order by installed_rank) from flyway_schema_history where version <> '6'"))
+                    .isEqualTo(beforeChecksums);
+            assertThat(count(connection, "landing_site")).isEqualTo(27);
+            assertThat(count(connection, "horizon_sample")).isEqualTo(97200);
+            for (String table : new String[]{"surface_candidate_result", "launch_option_batch", "launch_option_result", "trajectory_run", "trajectory_sample"})
+                assertThat(count(connection, table)).isZero();
+        }
+    }
+
+    private String scalar(Connection connection, String sql) throws Exception {
+        try (var statement = connection.createStatement(); var result = statement.executeQuery(sql)) {
+            result.next(); return result.getString(1);
         }
     }
 

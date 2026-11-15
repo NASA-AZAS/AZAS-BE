@@ -1,6 +1,7 @@
 package azas.domain.analysis.engine;
 
 import azas.domain.analysis.engine.VisibilityCalculator.State;
+import azas.domain.analysis.dto.DateOpportunityRequest;
 import azas.domain.landingsite.entity.ObserverSample;
 import azas.domain.landingsite.repository.ObserverSampleRepository;
 import java.nio.ByteBuffer;
@@ -19,23 +20,21 @@ public class DateOpportunityEngine {
     public static final int STEP_SECONDS = 600;
     public static final int MAX_CANDIDATES = 50;
     private final ObserverSampleRepository observations;
+    private final TransferSearch search;
     private final AnalysisEngine.Identity identity = new AnalysisEngine.Identity("llsn-ver2-date-opportunities",
-            EngineFingerprint.of(DateOpportunityEngine.class, VisibilityCalculator.class, AnalysisEngine.class));
+            EngineFingerprint.of(DateOpportunityEngine.class, VisibilityCalculator.class, AnalysisEngine.class,
+                    TransferSearch.class, LunarTransferOrbit.class, HorizonsClient.class, DateOpportunityRequest.class));
 
-    public DateOpportunityEngine(ObserverSampleRepository observations) { this.observations = observations; }
+    public DateOpportunityEngine(ObserverSampleRepository observations, TransferSearch search) { this.observations = observations; this.search = search; }
     public AnalysisEngine.Identity identity() { return identity; }
 
-    public record Window(Instant startUtc, Instant endUtc, Instant supportEndUtc) {
-        public long candidateCount() {
-            return 1 + Math.ceilDiv(Duration.between(startUtc, endUtc).getSeconds(), STEP_SECONDS);
-        }
-    }
+    public record Window(Instant startUtc, Instant endUtc, Instant supportEndUtc) {}
 
-    public record Result(AnalysisEngine.Output visibility, List<Window> windows, String observerSha256, int sampleCount) {}
+    public record Result(AnalysisEngine.Output visibility, List<Window> windows, String observerSha256, int sampleCount, List<TransferSearch.Candidate> candidates) {}
 
-    public Result analyze(long siteId, AnalysisEngine.Input input, long surfaceSeconds) {
+    public Result analyze(long siteId, AnalysisEngine.Input input, DateOpportunityRequest request) {
         var horizon = new VisibilityCalculator.Horizon(input.horizon());
-        Scan scan = new Scan(horizon, input.end(), surfaceSeconds);
+        Scan scan = new Scan(horizon, input.end(), request);
         Instant expected = input.start();
         Instant endExclusive = input.end().plusSeconds(1);
         var pageSize = Pageable.ofSize(2048);
@@ -49,13 +48,20 @@ public class DateOpportunityEngine {
                 expected = expected.plusSeconds(STEP_SECONDS);
             }
         }
-        return scan.finish();
+        var environment = scan.finish();
+        var evaluated = search.search(environment.windows(), request);
+        var diagnostics = new ArrayList<>(environment.visibility().diagnostics());
+        if (evaluated.truncated()) diagnostics.add("MAX_CANDIDATES_REACHED");
+        var output = new AnalysisEngine.Output(evaluated.truncated() ? "TRUNCATED" : "PARTIAL",
+                environment.visibility().days(), evaluated.sources(), diagnostics);
+        return new Result(output, environment.windows(), environment.observerSha256(), environment.sampleCount(), evaluated.candidates());
     }
 
     private static final class Scan {
         final VisibilityCalculator.Horizon horizon;
         final Instant deadline;
         final long surfaceSeconds;
+        final DateOpportunityRequest request;
         final List<AnalysisEngine.Day> days = new ArrayList<>();
         final List<Window> windows = new ArrayList<>();
         final MessageDigest digest;
@@ -65,10 +71,11 @@ public class DateOpportunityEngine {
         Instant lastVisible;
         int sampleCount;
 
-        Scan(VisibilityCalculator.Horizon horizon, Instant deadline, long surfaceSeconds) {
+        Scan(VisibilityCalculator.Horizon horizon, Instant deadline, DateOpportunityRequest request) {
             this.horizon = horizon;
             this.deadline = deadline;
-            this.surfaceSeconds = surfaceSeconds;
+            this.surfaceSeconds = request.durationSeconds();
+            this.request = request;
             try { digest = MessageDigest.getInstance("SHA-256"); }
             catch (java.security.NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
         }
@@ -92,7 +99,7 @@ public class DateOpportunityEngine {
             State sun = localState(row.getSunAzimuthDegrees(), row.getSunElevationDegrees());
             State earth = localState(row.getEarthAzimuthDegrees(), row.getEarthElevationDegrees());
             State joint = sun == State.VISIBLE && earth == State.VISIBLE ? State.VISIBLE : State.OCCULTED;
-            if (joint == State.VISIBLE) {
+            if (matches(sun, request.surfaceCriteria().sun()) && matches(earth, request.surfaceCriteria().earth())) {
                 if (firstVisible == null) firstVisible = utc;
                 lastVisible = utc;
             } else {
@@ -110,6 +117,10 @@ public class DateOpportunityEngine {
             day.add(utc, next.isAfter(deadline) ? deadline : next, new State[]{sun, earth, joint});
         }
 
+        boolean matches(State state, DateOpportunityRequest.Criterion criterion) {
+            return criterion == DateOpportunityRequest.Criterion.ANY || state.name().equals(criterion.name());
+        }
+
         void closeWindow() {
             if (firstVisible == null) return;
             if (Duration.between(firstVisible, lastVisible).getSeconds() >= surfaceSeconds) {
@@ -121,13 +132,10 @@ public class DateOpportunityEngine {
         Result finish() {
             closeWindow();
             days.add(AnalysisEngine.Day.localHorizon(day.finish(STEP_SECONDS)));
-            long candidates = windows.stream().mapToLong(Window::candidateCount).sum();
-            boolean truncated = candidates > MAX_CANDIDATES;
             List<String> diagnostics = new ArrayList<>(List.of("LOCAL_HORIZON_ONLY", "DISTANT_TERRAIN_NOT_EVALUATED"));
-            if (truncated) diagnostics.add("MAX_CANDIDATES_REACHED");
             if (windows.isEmpty()) diagnostics.add("NO_SAMPLE_SUPPORTED_WINDOW");
-            var output = new AnalysisEngine.Output(truncated ? "TRUNCATED" : "PARTIAL", days, List.of(), diagnostics);
-            return new Result(output, List.copyOf(windows), HexFormat.of().formatHex(digest.digest()), sampleCount);
+            var output = new AnalysisEngine.Output("PARTIAL", days, List.of(), diagnostics);
+            return new Result(output, List.copyOf(windows), HexFormat.of().formatHex(digest.digest()), sampleCount, List.of());
         }
     }
 }

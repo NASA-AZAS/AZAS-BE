@@ -181,7 +181,7 @@ Table visibility_window {
 Table landing_opportunity_result {
   landing_opportunity_result_id bigint [pk, increment]
   analysis_run_id uuid [not null]
-  opportunity_code varchar(160) [not null, note: '모듈의 candidateId. 순위가 아님']
+  opportunity_code varchar(160) [not null, note: '전체 접지 구간 식별자 UUID-Wn. 개별 후보와 구분']
   opportunity_status opportunity_status [not null]
   surface_condition_status varchar(30) [not null, note: 'SATISFIED 또는 UNKNOWN']
   terrain_coverage_status varchar(40) [not null]
@@ -205,7 +205,7 @@ Table landing_opportunity_result {
     (analysis_run_id, opportunity_code) [unique]
     (analysis_run_id, proposed_landing_at)
   }
-  Note: 'DATE_OPPORTUNITIES 분석의 결과. 구간이 여러 날짜에 걸칠 수 있어 실행에 직접 연결한다. 후보지·마감시각은 analysis_run을 통해 참조한다.'
+  Note: 'DATE_OPPORTUNITIES의 전체 접지 구간. 개별 평가 후보는 surface_candidate_result에 저장한다. 기존 행은 보존한다.'
 }
 
 Ref: landing_site.terrain_dataset_id > terrain_dataset.terrain_dataset_id [delete: restrict]
@@ -215,3 +215,109 @@ Ref: analysis_run.landing_site_id > landing_site.landing_site_id [delete: restri
 Ref: daily_analysis_result.analysis_run_id > analysis_run.analysis_run_id [delete: restrict]
 Ref: visibility_window.daily_analysis_result_id > daily_analysis_result.daily_analysis_result_id [delete: restrict]
 Ref: landing_opportunity_result.analysis_run_id > analysis_run.analysis_run_id [delete: restrict]
+
+
+Table surface_candidate_result {
+  analysis_run_id uuid [not null]
+  candidate_index integer [not null]
+  candidate_code text [not null, unique]
+  proposed_landing_at timestamptz [not null]
+  surface_finished_at timestamptz [not null]
+  window_start_at timestamptz [not null]
+  window_end_at timestamptz [not null]
+  status text [not null]
+  surface_status text [not null]
+  launch_at timestamptz
+  tli_at timestamptz
+  lunar_arrival_at timestamptz
+  transfer_duration_hours "double precision"
+  solver_status text [not null]
+  position_residual_km "double precision"
+  model text [not null]
+  reasons jsonb [not null]
+  solver_details jsonb
+  indexes {
+    (analysis_run_id, candidate_index) [pk]
+  }
+  Note: '실제로 평가한 후보. 순번은 점수 순위가 아니다. 솔버 내부 벡터만 JSON으로 보관.'
+}
+
+Table launch_option_batch {
+  analysis_run_id uuid [pk]
+  calculated_at timestamptz [not null]
+  engine_sha256 char(64) [not null]
+  model text [not null]
+  assumptions jsonb [not null]
+  touchdown_at timestamptz
+  status text [not null]
+  Note: '분석 완료 시 저장. V6 이전 실행은 첫 조회 당시 계산 시각으로 한 번 저장.'
+}
+
+Table launch_option_result {
+  analysis_run_id uuid [not null]
+  launch_site_id bigint [not null]
+  site_code text [not null]
+  latitude_degrees "double precision" [not null]
+  longitude_degrees_east "double precision" [not null]
+  status text [not null]
+  candidate_code text
+  launch_at timestamptz
+  tli_at timestamptz
+  lunar_arrival_at timestamptz
+  proposed_landing_at timestamptz
+  indexes {
+    (analysis_run_id, launch_site_id) [pk]
+    (analysis_run_id, candidate_code) [unique]
+  }
+  Note: '발사장 좌표 사본. 카탈로그 삭제·수정과 독립적으로 유지하며 후보가 없는 발사장도 기록.'
+}
+
+Table trajectory_run {
+  trajectory_run_id uuid [pk]
+  analysis_run_id uuid [not null]
+  launch_site_id bigint [not null]
+  candidate_code text [not null]
+  execution_status text [not null]
+  created_at timestamptz [not null]
+  finished_at timestamptz
+  expires_at timestamptz [not null]
+  engine_sha256 char(64) [not null]
+  input_snapshot jsonb [not null]
+  status text
+  reason text
+  solver_status text
+  model text
+  frame text
+  origin text
+  segment text
+  arrival_target text
+  nominal_sample_step_seconds integer
+  position_residual_km "double precision"
+  tli_delta_v_km_s "double precision"
+  source_records jsonb [not null]
+  Note: 'POST마다 새 UUID. 입력 사본과 엔진·출처, 실패 포함 실행 상태. 결과 수치는 컬럼.'
+}
+
+Table trajectory_sample {
+  trajectory_run_id uuid [not null]
+  sample_index integer [not null]
+  observed_at timestamptz [not null]
+  elapsed_seconds bigint [not null]
+  position_x_km "double precision" [not null]
+  position_y_km "double precision" [not null]
+  position_z_km "double precision" [not null]
+  velocity_x_km_s "double precision" [not null]
+  velocity_y_km_s "double precision" [not null]
+  velocity_z_km_s "double precision" [not null]
+  indexes {
+    (trajectory_run_id, sample_index) [pk]
+  }
+  Note: '실행별 순번과 시각. 지구 중심 ICRF, km 및 km/s.'
+}
+
+Ref: surface_candidate_result.analysis_run_id > analysis_run.analysis_run_id
+Ref: launch_option_batch.analysis_run_id - analysis_run.analysis_run_id
+Ref: launch_option_result.analysis_run_id > launch_option_batch.analysis_run_id
+Ref: trajectory_run.analysis_run_id > analysis_run.analysis_run_id
+Ref: trajectory_run.(analysis_run_id, candidate_code) > launch_option_result.(analysis_run_id, candidate_code)
+Ref: trajectory_sample.trajectory_run_id > trajectory_run.trajectory_run_id

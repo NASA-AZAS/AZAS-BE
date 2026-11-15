@@ -30,6 +30,7 @@ public class AnalysisQueryService {
     private final DailyAnalysisResultRepository days;
     private final VisibilityWindowRepository windows;
     private final LandingOpportunityResultRepository opportunities;
+    private final CandidateHistoryStore history;
     public AnalysisResponses.Run get(UUID id) {
         return AnalysisResponses.Run.from(runs.findById(id)
                 .orElseThrow(() -> new BusinessException(AnalysisErrorCode.RUN_NOT_FOUND)));
@@ -74,7 +75,9 @@ public class AnalysisQueryService {
                 time = next.isAfter(end) ? end : next;
             }
         }
-        Instant earliestTouchdown = candidates.isEmpty() ? null : candidates.getFirst().proposedLandingUtc();
-        return new AnalysisResponses.Opportunities(id, earliestTouchdown, intervals, candidates);
+        boolean persisted = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters()).has("request");
+        return new AnalysisResponses.Opportunities(id, intervals.stream().filter(w -> w.surfaceStatus().equals("SATISFIED"))
+                .map(AnalysisResponses.TouchdownWindow::startUtc).min(Instant::compareTo).orElse(null),
+                intervals, persisted ? history.get(id) : candidates);
     }
 }

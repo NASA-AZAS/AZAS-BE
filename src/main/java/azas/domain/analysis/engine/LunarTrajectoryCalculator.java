@@ -15,6 +15,9 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class LunarTrajectoryCalculator {
+    public static String fingerprint() {
+        return EngineFingerprint.of(LunarTrajectoryCalculator.class, LunarTransferOrbit.class, LaunchOptionCalculator.class, HorizonsClient.class);
+    }
     private static final int STEP_SECONDS = 600;
     private static final double EARTH_RADIUS_KM = 6378.137;
     private static final double MOON_OFFSET_KM = 2000;

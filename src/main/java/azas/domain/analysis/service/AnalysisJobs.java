@@ -34,6 +34,7 @@ public class AnalysisJobs {
     private final AnalysisStore store;
     private final AnalysisEngine engine;
     private final DateOpportunityEngine opportunities;
+    private final TrajectoryHistoryStore trajectoryHistory;
     private final Semaphore admission = new Semaphore(3);
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(2), Thread.ofPlatform().name("analysis-worker-", 0).factory());
@@ -41,8 +42,14 @@ public class AnalysisJobs {
             Thread.ofPlatform().name("analysis-deadlines").factory());
 
     public AnalysisJobs(AnalysisStore store, AnalysisEngine engine, DateOpportunityEngine opportunities) {
+        this(store, engine, opportunities, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AnalysisJobs(AnalysisStore store, AnalysisEngine engine, DateOpportunityEngine opportunities, TrajectoryHistoryStore trajectoryHistory) {
         this.store = store; this.engine = engine;
         this.opportunities = opportunities;
+        this.trajectoryHistory = trajectoryHistory;
         timer.setRemoveOnCancelPolicy(true);
     }
 
@@ -51,10 +58,48 @@ public class AnalysisJobs {
         timer.scheduleWithFixedDelay(() -> {
             try {
                 store.expire();
+                if (trajectoryHistory != null) trajectoryHistory.expire();
             } catch (RuntimeException exception) {
                 LOG.error("Analysis expiry sweep failed", exception);
             }
         }, 0, 15, TimeUnit.SECONDS);
+    }
+
+    public record Work<T>(Instant expiresAt, Supplier<T> calculate, java.util.function.Consumer<String> fail) {}
+
+    /** Synchronous HTTP compatibility, with the same single worker and three admitted jobs. */
+    public <T> T compute(Supplier<Work<T>> prepare) {
+        if (!admission.tryAcquire()) throw new BusinessException(AnalysisErrorCode.BUSY);
+        Work<T> work;
+        try { work = prepare.get(); }
+        catch (RuntimeException exception) { admission.release(); throw exception; }
+        String requestId = MDC.get("requestId");
+        var task = new FutureTask<T>(() -> {
+            try (var ignored = MDC.putCloseable("requestId", requestId)) { return work.calculate().get(); }
+        }) {
+            @Override protected void done() { admission.release(); worker.remove(this); }
+        };
+        try { worker.execute(task); }
+        catch (RejectedExecutionException exception) {
+            try { work.fail().accept("ANALYSIS_CAPACITY_EXCEEDED"); } finally { task.cancel(false); }
+            throw new BusinessException(AnalysisErrorCode.BUSY);
+        }
+        try {
+            return task.get(Math.max(1, Duration.between(Instant.now(), work.expiresAt()).toMillis()), TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException exception) {
+            try { work.fail().accept("ANALYSIS_TIMEOUT"); } finally { task.cancel(true); }
+            throw new AnalysisEngineException("ANALYSIS_TIMEOUT", exception);
+        } catch (InterruptedException exception) {
+            try { work.fail().accept("ANALYSIS_INTERRUPTED"); }
+            finally { task.cancel(true); Thread.currentThread().interrupt(); }
+            throw new AnalysisEngineException("ANALYSIS_INTERRUPTED", exception);
+        } catch (java.util.concurrent.ExecutionException exception) {
+            work.fail().accept("ANALYSIS_FAILED");
+            throw new AnalysisEngineException("ANALYSIS_FAILED", exception.getCause());
+        } catch (java.util.concurrent.CancellationException exception) {
+            work.fail().accept("ANALYSIS_INTERRUPTED");
+            throw new AnalysisEngineException("ANALYSIS_INTERRUPTED", exception);
+        }
     }
 
     public UUID submit(long siteId, AnalysisRequest request) {
@@ -65,7 +110,7 @@ public class AnalysisJobs {
     public UUID submitOpportunities(long siteId, DateOpportunityRequest request) {
         return schedule(() -> store.createOpportunities(siteId, request, opportunities.identity()),
                 prepared -> store.completeOpportunities(prepared,
-                        opportunities.analyze(siteId, prepared.input(), request.durationSeconds())));
+                        opportunities.analyze(siteId, prepared.input(), request)));
     }
 
     private UUID schedule(Supplier<AnalysisStore.Prepared> prepare, Predicate<AnalysisStore.Prepared> calculateAndSave) {
@@ -160,7 +205,7 @@ public class AnalysisJobs {
 
     @PreDestroy
     void stop() {
-        worker.shutdownNow();
+        worker.shutdownNow().forEach(task -> { if (task instanceof java.util.concurrent.Future<?> future) future.cancel(true); });
         timer.shutdownNow();
 
         try {
