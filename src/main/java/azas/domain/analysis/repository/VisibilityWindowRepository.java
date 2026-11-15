@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface VisibilityWindowRepository extends JpaRepository<VisibilityWindow, Long> {
     List<VisibilityWindow> findByDailyAnalysisResultAnalysisRunIdOrderByWindowStartAt(UUID runId);
+    List<VisibilityWindow> findByDailyAnalysisResultIdOrderByWindowStartAt(Long dailyResultId);
 }

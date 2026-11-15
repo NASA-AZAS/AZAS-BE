@@ -41,11 +41,17 @@ public class AnalysisQueryService {
             throw new BusinessException(AnalysisErrorCode.RUN_NOT_FOUND);
         }
 
+        if (date != null) {
+            return days.findByAnalysisRunIdAndAnalysisDate(id, date).stream()
+                    .map(day -> AnalysisResponses.Day.from(day,
+                            windows.findByDailyAnalysisResultIdOrderByWindowStartAt(day.getId())))
+                    .toList();
+        }
+
         var grouped = windows.findByDailyAnalysisResultAnalysisRunIdOrderByWindowStartAt(id).stream()
                 .collect(Collectors.groupingBy(window -> window.getDailyAnalysisResult().getId()));
 
         return days.findByAnalysisRunIdOrderByAnalysisDate(id).stream()
-                .filter(day -> date == null || date.equals(day.getAnalysisDate()))
                 .map(day -> AnalysisResponses.Day.from(day, grouped.getOrDefault(day.getId(), List.of()))).toList();
     }
 

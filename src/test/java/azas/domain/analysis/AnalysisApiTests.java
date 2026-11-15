@@ -91,6 +91,8 @@ class AnalysisApiTests extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.data[0].visibilityWindows.length()").value(0));
         mvc.perform(get("/api/v1/analyses/" + id + "/daily-results").param("date", "2026-12-02"))
                 .andExpect(jsonPath("$.data.length()").value(1)).andExpect(jsonPath("$.data[0].analysisDate").value("2026-12-02"));
+        mvc.perform(get("/api/v1/analyses/" + id + "/daily-results").param("date", "2026-12-03"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
         assertThat(jdbc.queryForObject("select source_provenance::text from analysis_run where analysis_run_id = ?", String.class, id))
                 .contains("responseSha256", "retrievedAt", "terrainDatasetSha256");
         verify(horizons, times(2)).angles(anyInt(), any());
@@ -164,6 +166,13 @@ class AnalysisApiTests extends PostgresIntegrationTest {
             assertThat(days.size()).isEqualTo(2);
             assertThat(days.get(0).path("sunVisibleTimeRatio").asDouble()).isEqualTo(143.0 / 144);
             assertThat(days.get(1).path("evaluatedPeriodEndAt").asString()).isEqualTo("2027-01-02T00:33:00Z");
+            mvc.perform(get("/api/v1/analyses/" + id + "/daily-results").param("date", "2027-01-02"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(1))
+                    .andExpect(jsonPath("$.data[0].analysisDate").value("2027-01-02"))
+                    .andExpect(jsonPath("$.data[0].visibilityWindows.length()").value(3))
+                    .andExpect(jsonPath("$.data[0].visibilityWindows[*].windowStartAt")
+                            .value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("2027-01-02T00:00:00Z"))));
 
             id = submitSurface(site, "2027-01-01T00:30:00Z", "0.5");
             assertThat(await(id).path("overallResultStatus").asString()).isEqualTo("PARTIAL");
