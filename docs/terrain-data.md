@@ -37,13 +37,14 @@
 | 원본 | 용도 |
 | --- | --- |
 | `candidates.csv` | 후보지 27개의 좌표·지표 표고·선별 결과 |
-| `Site01_horizon.csv` ~ `Site27_horizon.csv` | 사이트별 3,600행, 합계 97,200행 |
+| `<site>_horizon.csv` 27개 | 사이트별 3,600행, 합계 97,200행 |
 | `metadata.json` | 좌표계·높이·각도·NoData 정책 |
 | `product_registry.json` | 원본 30개 파일의 바이트 수·SHA-256 |
 | `Site01_mmgis.geojson` | Site01 좌표·지표 표고·관측 높이 교차 검증 |
 | `HORIZON_METADATA.md` | 생산자의 이관 기록 |
 
 CSV 28개에서 적재하는 데이터 행은 총 97,227개입니다. TIFF·JAR·예제 분석 결과는 포함하지 않습니다.
+`site_code`는 `Site01`, `Site20v2`, `Haworth`, `LM1` 등 원본 식별자를 그대로 사용하며 연속 번호로 바꾸지 않습니다.
 데이터셋 코드는 `landing-screen`, 버전은 `2026-11-14-v1`입니다.
 `source_metadata`는 `metadata`와 `productRegistry`를 포함하며, 번들 해시는 두 JSON과 모든 등록 파일을 포함합니다.
 `.gitattributes`에서 원본 번들의 줄바꿈 변환을 막아 Windows와 CI의 체크섬을 일치시킵니다.
