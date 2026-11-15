@@ -4,10 +4,12 @@ import azas.global.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
 
 public enum AnalysisErrorCode implements ErrorCode {
+    SURFACE_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, "SURFACE_CANDIDATE_NOT_FOUND", "해당 분석 실행에서 접지 후보를 찾을 수 없습니다."),
+    OBSERVER_DATA_INCOMPLETE(HttpStatus.SERVICE_UNAVAILABLE, "OBSERVER_DATA_INCOMPLETE", "필요한 10분 관측 표본이 누락되었습니다."),
     TRAJECTORY_NOT_FOUND(HttpStatus.NOT_FOUND, "TRAJECTORY_NOT_FOUND", "궤적 실행을 찾을 수 없습니다."),
     LAUNCH_SITES_INCOMPLETE(HttpStatus.SERVICE_UNAVAILABLE, "LAUNCH_SITE_DATA_INCOMPLETE", "발사장 기준 데이터 적재가 완료되지 않았습니다."),
     LAUNCH_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, "LAUNCH_CANDIDATE_NOT_FOUND", "해당 분석 실행에서 발사 후보를 찾을 수 없습니다."),
-    RUN_NOT_SUCCEEDED(HttpStatus.CONFLICT, "ANALYSIS_NOT_SUCCEEDED", "착륙 기회 분석이 성공한 뒤에 궤적을 계산할 수 있습니다."),
+    RUN_NOT_SUCCEEDED(HttpStatus.CONFLICT, "ANALYSIS_NOT_SUCCEEDED", "착륙 기회 분석이 성공한 뒤에 요청할 수 있습니다."),
     SITE_NOT_FOUND(HttpStatus.NOT_FOUND, "LANDING_SITE_NOT_FOUND", "후보지를 찾을 수 없습니다."),
     DATASET_NOT_FOUND(HttpStatus.NOT_FOUND, "TERRAIN_DATASET_NOT_FOUND", "지형 데이터셋을 찾을 수 없습니다."),
     RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "ANALYSIS_NOT_FOUND", "분석 실행을 찾을 수 없습니다."),

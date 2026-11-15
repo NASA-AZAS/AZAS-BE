@@ -2,6 +2,8 @@ package azas.domain.analysis.controller;
 
 import azas.domain.analysis.dto.LaunchOptionsResponse;
 import azas.domain.analysis.dto.LaunchTrajectoryResponse;
+import azas.domain.analysis.dto.PostLandingResponse;
+import azas.domain.analysis.service.PostLandingService;
 import azas.domain.analysis.service.LaunchOptionService;
 import azas.domain.analysis.service.LaunchTrajectoryService;
 import azas.domain.analysis.dto.AnalysisRequest;
@@ -42,6 +44,7 @@ public class AnalysisController {
     private final LaunchTrajectoryService trajectories;
     private final AnalysisJobs jobs;
     private final AnalysisQueryService query;
+    private final PostLandingService postLanding;
     @PostMapping("/landing-sites/{id}/analyses")
     @Operation(summary = "분석 요청", description = "UTC 기준 시작일과 종료일을 모두 포함한 1~31일을 분석합니다. 접수 후 실행 상태를 조회하세요.")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202", description = "분석 접수")
@@ -99,6 +102,20 @@ public class AnalysisController {
     public ApiResponse<AnalysisResponses.Opportunities> opportunities(@PathVariable UUID runId) {
         return ApiResponse.success(query.opportunities(runId));
     }
+    @GetMapping("/analyses/{runId}/surface-candidates/{candidateId}/post-landing")
+    @Operation(summary = "선택한 접지 후보에서 본 지구·태양의 하늘 경로", description = """
+            date-opportunities의 candidates[].candidateId를 사용합니다. 접지부터 활동 종료까지 실제 10분 격자 표본을 반환합니다.
+            earth와 sun의 방위각은 현지 북쪽부터 시계 방향, 고도각은 현지 수평면 기준(도)입니다. 중심 고도가 지형 지평선보다 높으면 visible=true입니다.
+            화면의 중간 위치는 프론트에서 주변 10개 표본의 방위각·고도각을 9차 라그랑주 보간합니다. 방위각의 0°/360° 경계는 연속 각도로 펼칩니다.
+            표본이 2~9개이면 선형 보간하며, 가시 여부와 차폐 시각은 원본 표본의 판정을 사용합니다. 구현 예시는 저장소 docs/analysis-api.md에 있습니다.
+            다음 차폐는 접지 이후 첫 차폐 표본(접지 포함)이며 관측 아카이브 끝까지 차폐가 없으면 null입니다.
+            평균은 2027~2028년 UTC 일별 가시율의 백분율입니다. 미등록 후보는 404, 분석 유형·상태 불일치는 409, 관측 누락은 503입니다.
+            """)
+    public ApiResponse<PostLandingResponse> postLanding(@PathVariable UUID runId,
+            @Parameter(description = "같은 실행의 접지 후보 ID") @PathVariable String candidateId) {
+        return ApiResponse.success(postLanding.get(runId, candidateId));
+    }
+
     @GetMapping("/analyses/{runId}/daily-results")
     @Operation(summary = "일별 결과 조회", description = "date를 지정하면 해당 UTC 날짜만 조회합니다. 진행 중이거나 결과가 없는 날짜는 빈 배열입니다.")
     public ApiResponse<List<AnalysisResponses.Day>> days(@PathVariable UUID runId,
