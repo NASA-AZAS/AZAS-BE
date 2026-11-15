@@ -1,5 +1,7 @@
 package azas.domain.analysis.controller;
 
+import azas.domain.analysis.dto.LaunchOptionsResponse;
+import azas.domain.analysis.service.LaunchOptionService;
 import azas.domain.analysis.dto.AnalysisRequest;
 import azas.domain.analysis.dto.AnalysisResponses;
 import azas.domain.analysis.dto.DateOpportunityRequest;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Analyses", description = "후보지 기간별 가시성 분석")
 public class AnalysisController {
+    private final LaunchOptionService launchOptions;
     private final AnalysisJobs jobs;
     private final AnalysisQueryService query;
     @PostMapping("/landing-sites/{id}/analyses")
@@ -68,5 +71,11 @@ public class AnalysisController {
     public ApiResponse<List<AnalysisResponses.Day>> days(@PathVariable UUID runId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return ApiResponse.success(query.days(runId, date));
+    }
+
+    @GetMapping("/analyses/{runId}/launch-options")
+    @Operation(summary = "첫 접지 시각 기준 발사장별 후보 조회", description = "착륙 기회 분석 실행 ID로 각 발사장의 첫 기하학적 후보를 조회합니다.")
+    public ApiResponse<LaunchOptionsResponse> launchOptions(@PathVariable UUID runId) {
+        return ApiResponse.success(launchOptions.get(runId));
     }
 }
