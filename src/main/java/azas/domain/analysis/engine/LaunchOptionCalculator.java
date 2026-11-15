@@ -56,7 +56,7 @@ public final class LaunchOptionCalculator {
                 earliest.plusSeconds(ASSUMPTIONS.launchToTliSeconds()), arrival, touchdown));
     }
 
-    private static double rotation(Instant instant) {
+    static double rotation(Instant instant) {
         return ROTATION_AT_J2000 + ROTATION_PER_DAY * Duration.between(J2000_NOON, instant).toSeconds() / SECONDS_PER_DAY;
     }
 }

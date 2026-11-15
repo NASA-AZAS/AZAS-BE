@@ -1,10 +1,13 @@
 package azas.domain.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import azas.domain.analysis.engine.TrajectoryTestEphemeris;
 import azas.support.PostgresIntegrationTest;
 import java.time.Instant;
 import java.util.UUID;
@@ -15,16 +18,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest
+@Import(TrajectoryTestEphemeris.class)
 @AutoConfigureMockMvc
 @Transactional
 class LaunchOptionsApiTests extends PostgresIntegrationTest {
     private static final String PATH = "/api/v1/analyses/{runId}/launch-options";
+    private static final String TRAJECTORY = PATH + "/{candidateId}/trajectory";
     private static final String START = "2027-01-01T00:00:00Z";
     private static final String TOUCHDOWN = "2027-01-19T04:10:00Z";
     private final JsonMapper json = JsonMapper.builder().build();
@@ -107,6 +113,80 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
 
     private JsonNode report(UUID id) throws Exception {
         return json.readTree(mvc.perform(get(PATH, id)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()).path("data");
+    }
+
+    @Test
+    void selectedCandidateMatchesEveryCliTrajectorySample() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        window(id, "SATISFIED", TOUCHDOWN);
+        jdbc.update("insert into launch_site values (7, 'Kennedy', 28.61, -80.60)");
+        String candidateId = report(id).path("launchSites").get(0).path("candidates").get(0).path("candidateId").asString();
+        var result = trajectory(id, candidateId);
+        assertThat(result.path("candidateId").asString()).isEqualTo("Kennedy-1799883120");
+        assertThat(result.path("analysisRunId").asString()).isEqualTo(id.toString());
+        assertThat(result.path("landingSiteId").asLong()).isOne();
+        assertThat(result.path("launchSiteId").asLong()).isEqualTo(7);
+        assertThat(result.path("status").asString()).isEqualTo("PRELIMINARY");
+        assertThat(result.path("lambertStatus").asString()).isEqualTo("CONVERGED");
+        assertThat(result.path("origin").asString()).isEqualTo("EARTH");
+        assertThat(result.path("frame").asString()).isEqualTo("ICRF");
+        assertThat(result.path("launchVerified").asBoolean()).isFalse();
+        assertThat(result.path("trajectoryVerified").asBoolean()).isFalse();
+        assertThat(result.path("positionResidualKm").asDouble()).isCloseTo(1.5189436587398232e-5, within(1e-7));
+        assertThat(result.path("tliDeltaVKmS").asDouble()).isCloseTo(16.926582331400496, within(1e-9));
+        assertThat(result.path("sourceRecords").size()).isEqualTo(2);
+        assertThat(result.path("sourceRecords").get(0).path("target").asInt()).isEqualTo(399);
+        assertThat(result.path("sourceRecords").get(1).path("target").asInt()).isEqualTo(301);
+        assertThat(result.path("sourceRecords").get(0).path("responseSha256").asString())
+                .isEqualTo("45b5708dbda638e34b0b8363d308b1de0b2a85b62105cb58530a1f15bfd21bdf");
+        assertThat(result.path("sourceRecords").get(1).path("responseSha256").asString())
+                .isEqualTo("6b96d8b8afa494c8411f6b6e462473fa05488242828f4b6ed92e6d9f1ff8c5b4");
+        JsonNode expected;
+        try (var input = getClass().getResourceAsStream("/analysis/kennedy-trajectory-samples.json")) {
+            expected = json.readTree(input);
+        }
+        var samples = result.path("samples");
+        assertThat(samples.size()).isEqualTo(701).isEqualTo(expected.size());
+        assertThat(samples.get(0).path("utc")).isEqualTo(result.path("tliUtc"));
+        assertThat(samples.get(samples.size() - 1).path("utc")).isEqualTo(result.path("lunarArrivalUtc"));
+        for (int i = 0; i < samples.size(); i++) {
+            var actual = samples.get(i);
+            var reference = expected.get(i);
+            assertThat(actual.path("utc")).isEqualTo(reference.path("utc"));
+            assertThat(actual.path("elapsedSeconds")).isEqualTo(reference.path("elapsedSeconds"));
+            for (int axis = 0; axis < 3; axis++) {
+                assertThat(actual.path("positionKm").get(axis).asDouble())
+                        .isCloseTo(reference.path("positionKm").get(axis).asDouble(), within(1e-6));
+                assertThat(actual.path("velocityKmS").get(axis).asDouble())
+                        .isCloseTo(reference.path("velocityKmS").get(axis).asDouble(), within(1e-9));
+            }
+        }
+    }
+
+    @Test
+    void rejectsUnknownOrUnfinishedRunsAndCandidatesOutsideTheSelectedRun() throws Exception {
+        String kennedy = "Kennedy-1799883120";
+        mvc.perform(post(TRAJECTORY, UUID.randomUUID(), kennedy)).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ANALYSIS_NOT_FOUND"));
+        mvc.perform(post(TRAJECTORY, dateRun("RUNNING"), kennedy)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ANALYSIS_NOT_SUCCEEDED"));
+        mvc.perform(post(TRAJECTORY, run("VISIBILITY", "SUCCEEDED", START, 1), kennedy)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ANALYSIS_TYPE_MISMATCH"));
+        var run = dateRun("SUCCEEDED");
+        window(run, "SATISFIED", "2027-01-25T04:10:00Z");
+        jdbc.update("insert into launch_site values (1, 'Kennedy', 28.61, -80.60)");
+        mvc.perform(post(TRAJECTORY, run, kennedy)).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("LAUNCH_CANDIDATE_NOT_FOUND"));
+        String otherCandidate = report(run).path("launchSites").get(0).path("candidates").get(0).path("candidateId").asString();
+        var failure = trajectory(run, otherCandidate);
+        assertThat(failure.path("status").asString()).isEqualTo("FAILED");
+        assertThat(failure.path("reason").asString()).isEqualTo("HORIZONS_UNAVAILABLE");
+        assertThat(failure.path("samples").size()).isZero();
+    }
+
+    private JsonNode trajectory(UUID id, String candidate) throws Exception {
+        return json.readTree(mvc.perform(post(TRAJECTORY, id, candidate)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString()).path("data");
     }
 

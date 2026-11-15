@@ -1,7 +1,9 @@
 package azas.domain.analysis.controller;
 
 import azas.domain.analysis.dto.LaunchOptionsResponse;
+import azas.domain.analysis.dto.LaunchTrajectoryResponse;
 import azas.domain.analysis.service.LaunchOptionService;
+import azas.domain.analysis.service.LaunchTrajectoryService;
 import azas.domain.analysis.dto.AnalysisRequest;
 import azas.domain.analysis.dto.AnalysisResponses;
 import azas.domain.analysis.dto.DateOpportunityRequest;
@@ -33,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Analyses", description = "후보지 기간별 가시성 분석")
 public class AnalysisController {
     private final LaunchOptionService launchOptions;
+    private final LaunchTrajectoryService trajectories;
     private final AnalysisJobs jobs;
     private final AnalysisQueryService query;
     @PostMapping("/landing-sites/{id}/analyses")
@@ -77,5 +80,11 @@ public class AnalysisController {
     @Operation(summary = "첫 접지 시각 기준 발사장별 후보 조회", description = "착륙 기회 분석 실행 ID로 각 발사장의 첫 기하학적 후보를 조회합니다.")
     public ApiResponse<LaunchOptionsResponse> launchOptions(@PathVariable UUID runId) {
         return ApiResponse.success(launchOptions.get(runId));
+    }
+
+    @PostMapping("/analyses/{runId}/launch-options/{candidateId}/trajectory")
+    @Operation(summary = "선택한 발사 후보의 예비 달 전이 궤적 계산")
+    public ApiResponse<LaunchTrajectoryResponse> trajectory(@PathVariable UUID runId, @PathVariable String candidateId) {
+        return ApiResponse.success(trajectories.calculate(runId, candidateId));
     }
 }
