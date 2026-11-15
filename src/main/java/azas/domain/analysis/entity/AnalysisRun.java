@@ -110,4 +110,41 @@ public class AnalysisRun {
 
     @Column(name = "execution_finished_at")
     private Instant executionFinishedAt;
+
+    @Column(name = "execution_owner")
+    private UUID executionOwner;
+
+    @Column(name = "execution_expires_at")
+    private Instant executionExpiresAt;
+
+    public boolean ownedAndActive(UUID owner) {
+        return owner.equals(executionOwner)
+                && (executionStatus == ExecutionStatus.PENDING || executionStatus == ExecutionStatus.RUNNING);
+    }
+
+    public boolean expired(Instant now) {
+        return executionExpiresAt != null && !now.isBefore(executionExpiresAt);
+    }
+
+    public void start(Instant now) {
+        executionStatus = ExecutionStatus.RUNNING;
+        executionStartedAt = now;
+    }
+
+    public void complete(ResultStatus result, String provenance, String[] diagnostics, Instant now) {
+        executionStatus = ExecutionStatus.SUCCEEDED;
+        overallResultStatus = result;
+        resultSchemaVersion = "1";
+        sourceProvenance = provenance;
+        diagnosticMessages = diagnostics.clone();
+        executionFinishedAt = now;
+    }
+
+    public void fail(String code, Instant now) {
+        executionStatus = ExecutionStatus.FAILED;
+        overallResultStatus = ResultStatus.FAILED;
+        failureCode = code;
+        diagnosticMessages = new String[]{code};
+        executionFinishedAt = now;
+    }
 }

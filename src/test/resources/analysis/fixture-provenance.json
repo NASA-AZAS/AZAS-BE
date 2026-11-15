@@ -1,0 +1,52 @@
+{
+  "399": {
+    "file": "7b7905d4d2e371bb315b6a382326b9415b2ca08aae87906657f624769b28b889.json",
+    "query": {
+      "format": "json",
+      "COMMAND": "'399'",
+      "EPHEM_TYPE": "'OBSERVER'",
+      "CENTER": "'coord@301'",
+      "COORD_TYPE": "'GEODETIC'",
+      "SITE_COORD": "'28.320547458273,-84.108224512534,4.690875976563'",
+      "START_TIME": "'2026-12-01 00:00:00'",
+      "STOP_TIME": "'2026-12-03 00:00:00'",
+      "STEP_SIZE": "'10 m'",
+      "QUANTITIES": "'4'",
+      "CSV_FORMAT": "'YES'",
+      "TIME_TYPE": "'UT'",
+      "TIME_ZONE": "'+00:00'",
+      "OBJ_DATA": "'NO'",
+      "TIME_DIGITS": "'SECONDS'",
+      "ANG_FORMAT": "'DEG'",
+      "APPARENT": "'AIRLESS'",
+      "CAL_FORMAT": "'CAL'",
+      "CAL_TYPE": "'GREGORIAN'"
+    },
+    "sha256": "5166781ee099a70af53985059af9053a10d70bdba294d7b7567335c715531d99"
+  },
+  "10": {
+    "file": "f492e0009f65e3b69d1a1296dc9522332227541822a5dea185229eed03cbdb1d.json",
+    "query": {
+      "format": "json",
+      "COMMAND": "'10'",
+      "EPHEM_TYPE": "'OBSERVER'",
+      "CENTER": "'coord@301'",
+      "COORD_TYPE": "'GEODETIC'",
+      "SITE_COORD": "'230.035561000000,-89.630720600000,0.864783000000'",
+      "START_TIME": "'2026-12-01 00:00:00'",
+      "STOP_TIME": "'2026-12-03 00:00:00'",
+      "STEP_SIZE": "'10 m'",
+      "QUANTITIES": "'4'",
+      "CSV_FORMAT": "'YES'",
+      "TIME_TYPE": "'UT'",
+      "TIME_ZONE": "'+00:00'",
+      "OBJ_DATA": "'NO'",
+      "TIME_DIGITS": "'SECONDS'",
+      "ANG_FORMAT": "'DEG'",
+      "APPARENT": "'AIRLESS'",
+      "CAL_FORMAT": "'CAL'",
+      "CAL_TYPE": "'GREGORIAN'"
+    },
+    "sha256": "9213eb7d1fc350bbf3138b91aecd8af3f2f2ae1e7a95141d97d10b763c3cb9cb"
+  }
+}
