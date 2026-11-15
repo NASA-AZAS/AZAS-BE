@@ -91,6 +91,8 @@ class AnalysisApiTests extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.data[0].visibilityWindows.length()").value(0));
         mvc.perform(get("/api/v1/analyses/" + id + "/daily-results").param("date", "2026-12-02"))
                 .andExpect(jsonPath("$.data.length()").value(1)).andExpect(jsonPath("$.data[0].analysisDate").value("2026-12-02"));
+        mvc.perform(get("/api/v1/analyses/" + id + "/daily-results").param("date", "2026-12-03"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
         assertThat(jdbc.queryForObject("select source_provenance::text from analysis_run where analysis_run_id = ?", String.class, id))
                 .contains("responseSha256", "retrievedAt", "terrainDatasetSha256");
         verify(horizons, times(2)).angles(anyInt(), any());
@@ -164,6 +166,13 @@ class AnalysisApiTests extends PostgresIntegrationTest {
             assertThat(days.size()).isEqualTo(2);
             assertThat(days.get(0).path("sunVisibleTimeRatio").asDouble()).isEqualTo(143.0 / 144);
             assertThat(days.get(1).path("evaluatedPeriodEndAt").asString()).isEqualTo("2027-01-02T00:33:00Z");
+            mvc.perform(get("/api/v1/analyses/" + id + "/daily-results").param("date", "2027-01-02"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(1))
+                    .andExpect(jsonPath("$.data[0].analysisDate").value("2027-01-02"))
+                    .andExpect(jsonPath("$.data[0].visibilityWindows.length()").value(3))
+                    .andExpect(jsonPath("$.data[0].visibilityWindows[*].windowStartAt")
+                            .value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("2027-01-02T00:00:00Z"))));
 
             id = submitSurface(site, "2027-01-01T00:30:00Z", "0.5");
             assertThat(await(id).path("overallResultStatus").asString()).isEqualTo("PARTIAL");
@@ -200,6 +209,45 @@ class AnalysisApiTests extends PostgresIntegrationTest {
                 "{\"missionDeadlineUtc\":\"2027-01-01\",\"surfaceDurationHours\":0.001}")) {
             mvc.perform(post("/api/v1/landing-sites/" + siteId() + "/date-opportunities")
                     .contentType("application/json").content(body)).andExpect(status().isBadRequest());
+        }
+        String endpoint = "/api/v1/landing-sites/" + siteId() + "/date-opportunities";
+        for (String query : java.util.List.of("observerHeightAboveSurfaceMeters=-1", "observerHeightAboveSurfaceMeters=NaN",
+                "observerHeightAboveSurfaceMeters=Infinity", "surfaceDurationHours=0.001", "surfaceDurationHours=0")) {
+            mvc.perform(post(endpoint + "?" + query).contentType("application/json")
+                    .content("{\"missionDeadlineUtc\":\"2027-01-31\"}")).andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test void heightAndDurationQueryChangeTheLandingWindow() throws Exception {
+        long site = siteId();
+        // Site01's north horizon is 7.2505963 degrees at 1 m, and about 7.233 degrees at 2 m.
+        jdbc.update("""
+                insert into observer_sample select ?, t, 0, 7.24, 0, 7.24
+                from generate_series('2027-01-01T00:00Z'::timestamptz, '2027-01-01T01:00Z', interval '10 minutes') t
+                """, site);
+        try {
+            String deadline = "2027-01-01T01:00:00Z";
+            UUID baseline = submitSurfaceBody(site, json.writeValueAsString(java.util.Map.of("missionDeadlineUtc", deadline)));
+            assertThat(await(baseline).path("executionStatus").asString()).isEqualTo("SUCCEEDED");
+            assertThat(dailyResults(baseline).get(0).path("jointVisibleTimeRatio").asDouble()).isZero();
+            var settings = json.readTree(jdbc.queryForObject(
+                    "select analysis_parameters::text from analysis_run where analysis_run_id = ?", String.class, baseline));
+            assertThat(settings.path("request").path("surfaceDurationHours").asInt()).isEqualTo(48);
+            assertThat(settings.path("site").path("observerHeightAboveSurfaceMeters").asDouble()).isEqualTo(1);
+
+            var response = mvc.perform(post("/api/v1/landing-sites/" + site + "/date-opportunities")
+                    .queryParam("observerHeightAboveSurfaceMeters", "2").queryParam("surfaceDurationHours", "0.5")
+                    .contentType("application/json").content(json.writeValueAsString(
+                            java.util.Map.of("missionDeadlineUtc", deadline, "surfaceDurationHours", 24))))
+                    .andExpect(status().isAccepted()).andReturn().getResponse();
+            UUID adjusted = UUID.fromString(json.readTree(response.getContentAsString()).path("data").path("analysisRunId").asString());
+            assertThat(await(adjusted).path("diagnostics").toString()).contains("FIXED_BLOCKER_HEIGHT_APPROXIMATION");
+            assertThat(dailyResults(adjusted).get(0).path("jointVisibleTimeRatio").asDouble()).isEqualTo(1);
+            var candidate = surfaceReport(adjusted).path("candidates").get(0);
+            assertThat(candidate.path("proposedLandingUtc").asString()).isEqualTo("2027-01-01T00:00:00Z");
+            assertThat(candidate.path("surfaceFinishUtc").asString()).isEqualTo("2027-01-01T00:30:00Z");
+        } finally {
+            jdbc.update("delete from observer_sample where landing_site_id = ? and observed_at between '2027-01-01T00:00Z' and '2027-01-01T01:00Z'", site);
         }
     }
 

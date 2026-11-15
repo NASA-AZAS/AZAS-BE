@@ -75,6 +75,19 @@ POST는 HTTP 202와 상태 조회용 `Location` 헤더를 반환합니다.
 | `GET /api/v1/analyses/{runId}/date-opportunities` | 첫 접지 시각, 전체 접지 구간, 평가한 개별 후보(기본 상한 50개) |
 | `GET /api/v1/analyses/{runId}/daily-results` | 일별 태양·지구·공동 가시율 및 가시 구간. `?date=2027-01-19` 지원 |
 
+착륙 기회 분석의 기본값은 관측자 높이 **1m**, 표면 활동 시간 **48시간**입니다. 예를 들어 아래 요청은 높이 2.5m에서 24시간 연속으로 조건이 맞는 접지 구간을 찾습니다.
+
+```http
+POST /api/v1/landing-sites/19/date-opportunities?observerHeightAboveSurfaceMeters=2.5&surfaceDurationHours=24
+Content-Type: application/json
+
+{"missionDeadlineUtc":"2027-01-31"}
+```
+
+높이는 0 이상의 유한한 미터 값입니다. 활동 시간은 쿼리 값을 우선하며, 쿼리에서 생략하면 기존 JSON 본문의 `surfaceDurationHours`를 사용합니다. 둘 다 생략하면 48시간입니다.
+
+관측 높이가 지형 데이터의 기준 높이와 다르면 각 방위각에서 기존 차폐점까지의 수평 거리로 지평선 고도각을 보정합니다. 이 근사는 차폐점과 아카이브의 태양·지구 관측각을 고정하므로, 다른 지형점이 새 지평선을 결정하는 효과와 관측 높이에 따른 천체 시차는 반영하지 않습니다. 실행 결과의 `diagnostics`와 착륙 후 조회의 `model`에 `FIXED_BLOCKER_HEIGHT_APPROXIMATION`을 표시합니다.
+
 ```json
 {
   "missionDeadlineUtc": "2027-01-31",
@@ -171,6 +184,85 @@ $env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djavax.net.ssl.trustStoreType=
 ```
 
 운영 실행 방법과 CI/CD 경계는 [배포 가이드](deployment.md)를 참고하세요.
+
+## 접지 후보에서 본 지구와 태양
+
+착륙 기회 분석이 `SUCCEEDED`이면 `GET /api/v1/analyses/{runId}/date-opportunities`의
+`data.candidates[].candidateId`를 선택합니다. 같은 실행에서 아래 경로를 본문 없이 호출하세요.
+
+```http
+GET /api/v1/analyses/{runId}/surface-candidates/{candidateId}/post-landing
+```
+
+HTTP 200의 `data`는 팀에서 공유한 `post_landing.json`과 같은 구조입니다. `siteId`는 달 후보지 코드이고,
+`touchdownUtc`와 `surfaceEndUtc`는 선택한 접지 후보의 접지·활동 종료 시각입니다.
+V6 이전 실행도 접지 후보 목록에서 받은 ID로 조회할 수 있습니다.
+
+| 필드 | 화면에서 사용하는 방법 |
+| --- | --- |
+| `samples[].earth`, `samples[].sun` | 시각순으로 방위각 `azimuthDeg`(현지 북쪽 0°부터 시계 방향)과 고도각 `elevationDeg`(현지 수평면 기준)를 연결하면 각 천체 중심의 겉보기 경로입니다. |
+| `terrainHorizonDeg`, `visible` | 같은 방위각에서 선형 보간한 지형 지평선보다 고도각이 높으면 가시입니다. 같으면 차폐입니다. `jointVisible`은 두 천체가 모두 보인다는 뜻입니다. 모델명은 `BODY_CENTER_LOCAL_TERRAIN`입니다. |
+| `samples[].utc`, `elapsedSeconds`, `sampleStepSeconds` | 접지부터 활동 종료까지 **실제 UTC 10분 격자**의 표본을 반환합니다. 경계가 격자에 있으면 포함합니다. 경과 초는 접지 시각부터 세므로 첫 표본도 0보다 클 수 있고, 짧은 활동에 격자가 없으면 빈 배열입니다. |
+| `nextTerrainOccultationUtc.earth`, `.sun` | 접지 시각부터 각 천체가 처음 가려진 관측 시각입니다. 활동 종료 뒤도 탐색합니다. 완전한 관측 자료의 마지막 경계(2030-01-01 00:00 UTC)까지 가려지지 않은 천체는 `null`입니다. |
+| `meanDailyVisibility` | 선택한 착륙지의 2027-01-01~2028-12-31 UTC 일별 가시율 731개를 산술평균한 백분율입니다. 원본 마감일이 23:59 UTC이므로 마지막 날은 86,340초를 분모로 씁니다. |
+
+Site01 예시에서는 2027-01-19 04:10 UTC에 접지한 뒤 48시간 동안 표본 289개를 반환합니다.
+첫 지구 표본의 방위각은 125.088221°, 고도각은 5.844995°입니다. 첫 차폐 표본은 지구가 1월 23일 10:50 UTC,
+태양이 1월 26일 17:30 UTC이고, 731일 평균은 지구 50.107440%, 태양 16.269553%입니다.
+
+없는 분석은 404 `ANALYSIS_NOT_FOUND`, 해당 분석에 없는 접지 후보는 404 `SURFACE_CANDIDATE_NOT_FOUND`입니다.
+다른 분석 종류 또는 성공 전 실행은 409, 잘못된 지평선은 422 `ANALYSIS_TERRAIN_INVALID`,
+계산에 필요한 관측 격자가 빠졌으면 503 `OBSERVER_DATA_INCOMPLETE`입니다. 조회는 DB를 읽으며 Horizons를 호출하지 않습니다.
+
+### 프론트에서 9차 라그랑주 보간으로 경로 그리기
+
+서버의 `samples`는 10분 간격의 원본 표본입니다. 프론트는 재생 시각 주변의 연속 표본 10개를 사용해 **화면에 그릴 지구·태양의 방위각과 고도각**을 추정합니다. 아래 함수는 응답을 받을 때 천체별로 한 번 만듭니다. 재생 중에는 접지 후 경과 초인 `(playbackUtcMs - Date.parse(data.touchdownUtc)) / 1000`을 넘겨 호출합니다.
+
+```js
+function makeSkyTrack(data, bodyKey) {
+  const { samples, sampleStepSeconds } = data;
+  const bodies = samples.map(sample => sample[bodyKey]);
+  const n = bodies.length;
+  const wrap = deg => ((deg % 360) + 360) % 360;
+  const az = [];
+  for (let i = 0; i < n; i++) {
+    const raw = bodies[i].azimuthDeg;
+    // 359° → 1°를 연속된 359° → 361°로 연결한다.
+    az.push(i === 0 ? raw : az[i - 1] + (wrap(raw - bodies[i - 1].azimuthDeg + 180) - 180));
+  }
+  const el = bodies.map(body => body.elevationDeg);
+  const weights = [1, -9, 36, -84, 126, -126, 84, -36, 9, -1];
+
+  return function positionAt(elapsedSeconds) {
+    if (n === 0) return null;
+    const offset = (elapsedSeconds - samples[0].elapsedSeconds) / sampleStepSeconds;
+    const x = Math.max(0, Math.min(n - 1, offset));
+    const left = Math.floor(x);
+    if (x === left) {
+      return { azimuthDeg: bodies[left].azimuthDeg, elevationDeg: el[left] };
+    }
+    if (n < 10) {
+      const f = x - left;
+      return { azimuthDeg: wrap(az[left] + f * (az[left + 1] - az[left])),
+               elevationDeg: el[left] + f * (el[left + 1] - el[left]) };
+    }
+    const start = Math.max(0, Math.min(left - 4, n - 10));
+    let denominator = 0, azSum = 0, elSum = 0;
+    for (let j = 0; j < 10; j++) {
+      const index = start + j;
+      const w = weights[j] / (x - index);
+      denominator += w;
+      azSum += w * az[index];
+      elSum += w * el[index];
+    }
+    return { azimuthDeg: wrap(azSum / denominator), elevationDeg: elSum / denominator };
+  };
+}
+```
+
+- **검산** — [Site01 원본](../src/test/resources/analysis/post_landing.json)으로 `makeSkyTrack(data, "earth")(2700)`을 호출하면 2027-01-19 04:55 UTC의 방위각 **125.136829°**, 고도각 **5.825041°**가 나옵니다(소수 여섯 자리). 태양에는 `"sun"`을 사용합니다.
+- **짧은 구간과 양 끝** — 표본 0개면 표시를 생략하고, 1개면 그 위치를 표시합니다. 2~9개면 이웃한 두 표본으로 선형 보간합니다. 첫 표본 전이나 마지막 표본 후에는 가장 가까운 표본 위치에 멈춥니다.
+- **가시성 표시** — 표본 사이에서는 직전 원본 표본의 `visible`·`jointVisible`을 표시합니다. 첫 표본 전에는 판정을 보류합니다. 차폐 시각과 장기 평균에는 응답의 `nextTerrainOccultationUtc`와 `meanDailyVisibility`를 그대로 사용합니다.
 
 ## 첫 접지 시각 기준 발사장 후보
 
