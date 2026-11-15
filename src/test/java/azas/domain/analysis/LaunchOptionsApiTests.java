@@ -29,6 +29,7 @@ import tools.jackson.databind.json.JsonMapper;
 @AutoConfigureMockMvc
 @Transactional
 class LaunchOptionsApiTests extends PostgresIntegrationTest {
+    private static final String DATE_OPPORTUNITIES = "/api/v1/analyses/{runId}/date-opportunities";
     private static final String PATH = "/api/v1/analyses/{runId}/launch-options";
     private static final String TRAJECTORY = PATH + "/{candidateId}/trajectory";
     private static final String START = "2027-01-01T00:00:00Z";
@@ -79,6 +80,38 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
     }
 
     @Test
+    void dateOpportunitiesAndLaunchOptionsUseOnlySatisfiedTouchdowns() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        jdbc.update("insert into launch_site values (1, 'Kennedy', 28.61, -80.60)");
+        window(id, "UNKNOWN", "2027-01-05T00:00:00Z");
+        window(id, "UNKNOWN", "2027-01-22T00:00:00Z");
+
+        var unknown = dateOpportunities(id);
+        var launch = report(id);
+        assertThat(unknown.path("earliestTouchdownUtc").isNull()).isTrue();
+        assertThat(launch.path("touchdownUtc")).isEqualTo(unknown.path("earliestTouchdownUtc"));
+        assertThat(launch.path("launchSites")).isEmpty();
+        assertThat(unknown.path("candidates")).isEmpty();
+        assertThat(unknown.path("windows")).extracting(w -> w.path("surfaceStatus").asString())
+                .containsExactly("UNKNOWN", "UNKNOWN");
+
+        window(id, "SATISFIED", TOUCHDOWN);
+        var mixed = dateOpportunities(id);
+        assertThat(mixed.path("windows")).extracting(w -> w.path("surfaceStatus").asString())
+                .containsExactly("UNKNOWN", "SATISFIED", "UNKNOWN");
+        assertThat(mixed.path("earliestTouchdownUtc").asString()).isEqualTo(TOUCHDOWN);
+        assertThat(report(id).path("touchdownUtc")).isEqualTo(mixed.path("earliestTouchdownUtc"));
+
+        var candidates = mixed.path("candidates");
+        assertThat(candidates.size()).isEqualTo(7);
+        Instant first = Instant.parse(TOUCHDOWN);
+        for (int i = 0; i < candidates.size(); i++) {
+            assertThat(candidates.get(i).path("proposedLandingUtc").asString())
+                    .isEqualTo(first.plusSeconds(i * 600L).toString());
+        }
+    }
+
+    @Test
     void distinguishesNoTouchdownFromAnEmptyCatalogAndUsesTheUploadedSites() throws Exception {
         UUID id = dateRun("SUCCEEDED");
         window(id, "UNKNOWN", TOUCHDOWN);
@@ -113,6 +146,11 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
 
     private JsonNode report(UUID id) throws Exception {
         return json.readTree(mvc.perform(get(PATH, id)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()).path("data");
+    }
+
+    private JsonNode dateOpportunities(UUID id) throws Exception {
+        return json.readTree(mvc.perform(get(DATE_OPPORTUNITIES, id)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString()).path("data");
     }
 

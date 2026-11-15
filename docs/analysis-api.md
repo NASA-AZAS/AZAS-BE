@@ -86,7 +86,7 @@ POST는 HTTP 202와 상태 조회용 `Location` 헤더를 반환합니다.
 
 태양과 지구의 고도가 각각 해당 방위각의 지역 지평선보다 높을 때 공동 가시로 판정합니다. 접지 구간의 시작과 끝은 모두 포함되며 끝은 마지막 공동 가시 표본 시각에서 활동 시간을 뺀 값입니다. 일별 가시율은 다음 격자까지 직전 표본을 적용해 UTC 날짜별로 집계합니다. 마지막 날짜는 마감 시각까지만 집계합니다.
 
-`windows[].startUtc`와 `endUtc`는 접지 가능한 구간이고, `supportEndUtc`는 활동을 지지하는 마지막 표본 시각입니다. 만족 구간이 없으면 `earliestTouchdownUtc`는 null이고 두 배열은 비어 있습니다. 개별 후보가 50개를 넘으면 `TRUNCATED`로 기록하며 전체 접지 구간과 일별 결과는 조회할 수 있습니다. 후보의 `proposedLandingUtc`는 표면 조건으로 계산한 접지 시각입니다.
+`windows[]`에는 `UNKNOWN`을 포함한 모든 구간과 각각의 `surfaceStatus`가 들어갑니다. `startUtc`와 `endUtc`는 구간의 양 끝이고, `supportEndUtc`는 활동을 지지하는 마지막 표본 시각입니다. `earliestTouchdownUtc`와 `candidates`는 `SATISFIED` 구간에서만 산출합니다. 만족 구간이 없으면 최초 접지 시각은 null이고 후보 배열은 비어 있습니다. 개별 후보가 50개를 넘으면 `TRUNCATED`로 기록하며 전체 구간과 일별 결과는 조회할 수 있습니다. 후보의 `proposedLandingUtc`는 표면 조건으로 계산한 접지 시각입니다.
 
 동일 요청이라도 실행마다 엔진 해시, 지형 데이터셋 해시, 사용한 관측 표본 수와 표본 해시를 보관합니다. 실제 원본과 비교하려면 테스트 프로세스에 `LLSN_VER2_HOME`으로 원본 모듈 디렉터리를 지정합니다. `AnalysisApiTests`가 일회용 PostgreSQL의 Site01 관측값으로 2027년 1월 접지 구간·후보 시각·31일의 태양/지구 가시율을 오프라인 CLI 결과와 비교합니다.
 
