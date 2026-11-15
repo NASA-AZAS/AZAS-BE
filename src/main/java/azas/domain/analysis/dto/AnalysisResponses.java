@@ -13,16 +13,16 @@ import java.util.UUID;
 public final class AnalysisResponses {
     private AnalysisResponses() {}
     public record Accepted(UUID analysisRunId, String executionStatus) {}
-    @Schema(description = "접지할 수 있는 UTC 구간. startUtc·endUtc는 모두 포함하며 supportEndUtc는 표면 활동을 뒷받침하는 마지막 관측 시각입니다.")
+    @Schema(description = "Range of possible touchdown times in UTC. Both ends are inclusive. The final supporting observation marks the end of the available activity period.")
     public record TouchdownWindow(Instant startUtc, Instant endUtc, Instant supportEndUtc,
-            @Schema(description = "구간의 표면 조건 판정. 최초 접지 시각에는 SATISFIED 구간만 사용합니다.")
+            @Schema(description = "Whether the surface conditions hold for this window. Only a SATISFIED window can supply the earliest touchdown.")
             String surfaceStatus) {}
-    @Schema(description = "지정한 시각의 접지 후보. candidateId는 이 분석의 표면 후보 식별자입니다. 궤적 계산용 발사 후보 ID는 launch-options에서 얻습니다.")
+    @Schema(description = "One evaluated touchdown time. Use its candidateId for the post-landing sky. Use a candidate from launch-options to calculate a flight path.")
     public record SurfaceCandidate(String candidateId, Instant proposedLandingUtc, Instant surfaceFinishUtc,
             String status, String surfaceStatus, Instant launchUtc, Instant tliUtc, Instant lunarArrivalUtc,
             Double transferDurationHours, String lambertStatus, Double positionResidualKm, String modelLevel,
             boolean trajectoryVerified,
-            @Schema(description = "개별 후보의 판정 사유. 전이 입력을 생략하면 TRANSFER_INPUTS_MISSING입니다.")
+            @Schema(description = "Why this touchdown received its status. TRANSFER_INPUTS_MISSING means the request omitted the transfer inputs.")
             List<String> reasons, java.util.Map<String, Object> lambert) {
         public SurfaceCandidate(String id, Instant landing, Instant finish) {
             this(id, landing, finish, "ENVIRONMENT_ONLY", "SATISFIED", null, null, null, null,
@@ -31,7 +31,7 @@ public final class AnalysisResponses {
     }
     public record Opportunities(UUID analysisRunId, Instant earliestTouchdownUtc, List<TouchdownWindow> windows,
             List<SurfaceCandidate> candidates,
-            @Schema(description = "도착 선택 화면의 시간대. 만족 구간 중 접지 시각의 선택 폭도 요청한 표면 활동 시간 이상인 구간입니다.")
+            @Schema(description = "Windows for the arrival picker. The surface conditions are satisfied and the touchdown range is at least as long as the requested activity.")
             List<TouchdownWindow> arrivalWindows) {}
     public record Run(UUID analysisRunId, Long landingSiteId, String analysisType, String executionStatus,
             String overallResultStatus, Instant analysisStartAt, Instant analysisEndAt, int sampleIntervalMinutes,

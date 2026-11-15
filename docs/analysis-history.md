@@ -1,27 +1,24 @@
-# 분석 옵션과 실행 기록
+# Analysis options and saved runs
 
-기본 API 흐름과 응답은 [분석 API](analysis-api.md), 전체 테이블은 [ERD](erd.dbml)를 참고하세요.
+The [API guide](analysis-api.md) follows a mission from landing site selection to a saved trajectory. This reference covers the optional search inputs, what each run preserves and how older runs are read. [Database diagram source](erd.dbml)
 
-## 요청 옵션
+## Search options
 
-`POST /api/v1/landing-sites/{id}/date-opportunities`는 URL의 후보지 PK 하나를 분석합니다.
-기존 `missionDeadlineUtc`와 `surfaceDurationHours` 요청은 그대로 사용할 수 있습니다.
-기준 시작일은 원본 ver2와 같은 `2027-01-01T00:00:00Z`입니다. 날짜만 쓰면 마감은 UTC 23:59입니다.
+Send `POST /api/v1/landing-sites/{id}/date-opportunities` for one lunar site. The site ID comes from the URL. The search starts at `2027-01-01T00:00:00Z`. The start is fixed, so passing a later `searchStartUtc` to select a landing day returns HTTP 400. Use `missionDeadlineUtc` to set the end. A date alone means 23:59 UTC on that date.
 
-| 옵션 | 기본값·범위 | 계산에 반영되는 지점 |
+| Option | Default and allowed values | Effect |
 | --- | --- | --- |
-| `surfaceCriteria.sun`, `.earth` | `VISIBLE`; `ANY`, `VISIBLE`, `OCCULTED` | 요청한 조건을 만족하는 연속 표본 구간 |
-| `surfaceCriteria.unknownPolicy` | `RECORD_UNKNOWN`, `EXCLUDE_WITH_RECORD` | 현재 DB는 유한한 각도만 허용하므로 UNKNOWN 표본을 생성하지 않음. 누락은 실행 실패 |
-| `timeStepMinutes` | 10; 1~1440 | 개별 접지 후보 탐색 간격. 관측 아카이브 자체는 항상 10분 간격 |
-| `maxCandidates` | 50; 1~10000 | 개별 후보 평가 수 상한. 전체 접지 구간은 자르지 않음 |
-| `refinementPolicy` | `minStepMinutes=min(10,timeStepMinutes)`, `maxDepth=0` | 이웃 후보의 상태·솔버 상태가 다를 때 분 단위 중점 추가 평가 |
-| `networkMode` | `ONLINE` 또는 `CACHE_ONLY` | 표면 조건은 DB만 사용. 전이 계산은 ONLINE에서 외부 벡터 조회 |
+| `surfaceDurationHours` | 48 hours | Required continuous time on the surface. The query parameter, when supplied, takes precedence over the JSON value. |
+| `surfaceCriteria.sun` and `surfaceCriteria.earth` | Both default to `VISIBLE`. Each accepts `ANY`, `VISIBLE` or `OCCULTED`. | Find continuous runs of observations that satisfy the requested view of the Sun and Earth. |
+| `surfaceCriteria.unknownPolicy` | `RECORD_UNKNOWN` by default, or `EXCLUDE_WITH_RECORD` | Sets how to handle uncertain samples. The current archive only stores finite angles. A missing sample fails the run. |
+| `timeStepMinutes` | 10 by default, from 1 to 1,440 | Time between candidate touchdown evaluations. The underlying observations remain ten minutes apart. |
+| `maxCandidates` | 50 by default, from 1 to 10,000 | Maximum number of individually evaluated candidates. All landing windows remain available. |
+| `refinementPolicy` | `minStepMinutes=min(10,timeStepMinutes)` and `maxDepth=0` | When neighbouring candidates have different outcomes or solver states, evaluate their midpoint on a whole-minute grid. |
+| `networkMode` | `ONLINE` by default, or `CACHE_ONLY` | Surface conditions use stored observations. Online transfer calculations can request external vectors. |
 
-최소 정밀도는 1분 이상, 탐색 간격 이하이고 최대 깊이는 0~12입니다.
-미지원 키, 잘못된 enum, 부분적인 전이 입력은 접수 전에 HTTP 400입니다.
-PK를 URL에서 받으므로 원본 CLI의 `candidateSiteIds`, `siteDeadlinesUtc`, 파일 경로·출력 옵션은 받지 않습니다.
+The minimum refinement step must be at least one minute and no longer than the candidate step. Maximum depth ranges from 0 to 12. Unsupported keys, invalid enum values and incomplete transfer inputs return HTTP 400 before a job is accepted. The HTTP API identifies the site in the path. The offline CLI's site lists, per-site deadlines and file options do not apply here.
 
-예를 들어 태양 조건을 무시하고 지구가 차폐된 구간에서 1시간 활동할 후보를 최대 7개 찾습니다.
+This request finds up to seven touchdown candidates for one hour of activity with Earth below the horizon. The Sun may be visible or hidden.
 
 ```json
 {
@@ -38,60 +35,48 @@ PK를 URL에서 받으므로 원본 CLI의 `candidateSiteIds`, `siteDeadlinesUtc
 }
 ```
 
-일별 태양·지구 가시 비율은 실제 가시성으로 집계합니다. 검색 조건을 ANY나 OCCULTED로 바꿔도 그 지표의 의미는 같습니다.
-표본 사이의 짧은 구간을 새 관측으로 확인하는 기능은 없으며, 후보 탐색 간격을 줄여도 아카이브 정밀도가 높아지지는 않습니다.
+Daily Sun and Earth visibility fractions always describe what was visible, regardless of the search criteria. Evaluating candidates more frequently cannot increase the resolution of the archived observations or verify a short event between samples.
 
-## 원본 전이 입력
+## Optional transfer inputs
 
-전이 계산에는 아래 다섯 옵션을 **함께** 전달합니다. 시간 범위는 `min`, `max`, `step`을 가진 시간 단위 객체입니다.
-각 값은 정수 분으로 표현할 수 있어야 하고, 한 범위는 최대 100개 간격을 허용합니다. 끝값도 평가합니다.
+To assess a transfer for an individual touchdown candidate, supply all five options below. Time ranges use `min`, `max` and `step` in hours. Each value must be expressible in whole minutes. A range supports up to 100 intervals and includes the end value.
 
-| 옵션 | 내용 |
+| Option | Input |
 | --- | --- |
-| `departureState` | `epochUtc`, `frame="ICRF"`, `center="EARTH"`, `positionKm[3]`, `velocityKmS[3]`, `earthMuKm3S2` |
-| `arrivalTargetRule` | `type="MOON_RELATIVE_ICRF_OFFSET"`, `offsetKm[3]`, `minimumAltitudeKm` |
-| `transferDurationHours` | 양수 전이 시간 범위 |
-| `preLandingDelayHours` | 0 이상 도착~표면 접지 지연 범위 |
-| `lambert` | `branch="SHORT_WAY"` 또는 `"LONG_WAY"`, `positionToleranceKm`(0 초과~10 이하) |
+| `departureState` | Departure epoch (`epochUtc`), `frame="ICRF"`, `center="EARTH"`, three-component position in km (`positionKm`), velocity in km/s (`velocityKmS`) and Earth's gravitational parameter (`earthMuKm3S2`). |
+| `arrivalTargetRule` | `type="MOON_RELATIVE_ICRF_OFFSET"`, a three-component `offsetKm` and `minimumAltitudeKm`. |
+| `transferDurationHours` | Positive flight time from departure toward the Moon to lunar arrival. |
+| `preLandingDelayHours` | Non-negative time between lunar arrival and touchdown. |
+| `lambert` | `branch="SHORT_WAY"` or `"LONG_WAY"` and `positionToleranceKm` greater than zero and at most 10 km. |
 
-`launchToTliDelayHours`는 전이 입력이 있을 때만 추가할 수 있습니다. 생략하면 `launchUtc=null`이며 TLI를 발사로 표시하지 않습니다.
-출발 위치는 지구 반경 밖, 도착 오프셋은 달 반경+최소 고도 밖이어야 합니다.
-출발 epoch는 기준 시작일에서 366일 이내, 정수 초 UTC입니다.
+Optionally include `launchToTliDelayHours` with the transfer inputs. If it is omitted, `launchUtc` is null. Translunar injection (TLI) is the departure burn from Earth orbit and occurs after launch. The initial position must be outside Earth's radius, and the arrival offset must clear the lunar radius plus the minimum altitude. The departure epoch must be a whole-second UTC time within 366 days of the search start.
 
-전이 후보 하나는 TLI·달 도착 각각에서 지구(399)·달(301) 벡터를 새로 조회합니다(정상 평가당 4회).
-원본과 같은 Earth-only 전파와 zero-revolution Lambert를 사용하며, 모든 `trajectoryVerified`는 false입니다.
-`CACHE_ONLY` 전이에는 서버의 별도 벡터 아카이브가 없으므로 외부 호출 없이 `UNKNOWN / SOURCE_OR_NUMERICAL_ERROR`, 사유 `VECTOR_ARCHIVE_UNAVAILABLE`을 기록합니다.
-출발 시간이 탐색 시작보다 이르면 `EXCLUDED`로 기록하며 벡터를 조회하지 않습니다.
+A full candidate evaluation requests Earth (399) and Moon (301) vectors at both TLI and lunar arrival, four lookups in total. It uses Earth-only propagation and a zero-revolution Lambert solution. The model returns `trajectoryVerified=false`. In `CACHE_ONLY` mode there is no local transfer vector archive, so the result is `UNKNOWN / SOURCE_OR_NUMERICAL_ERROR` with reason `VECTOR_ARCHIVE_UNAVAILABLE` and no external request. A departure before the search start is `EXCLUDED` before any vector lookup.
 
-`date-opportunities` 후보 응답에는 기존 ID·접지·활동 종료 시각에 더해 상태, 발사/TLI/도착 시각, 전이 시간, 솔버 상태·잔차, 모델, 사유, 솔버 상세가 포함됩니다.
-전이 후보의 이중체 계산과 아래의 고정 주차궤도 발사 후보·궤적 계산은 서로 다른 입력을 사용하는 흐름입니다.
+Each candidate records touchdown and activity end, its assessment, launch/TLI/arrival times when available, transfer duration, solver state and residual, model and reasons. This optional assessment uses the supplied departure state. The separate launch-site and trajectory endpoints assume a fixed parking orbit and use the selected touchdown. Launch options default to the first qualifying touchdown.
 
-## 저장과 조회
+## What a run saves
 
-| 테이블 | 저장 단위 |
+| Table | Contents |
 | --- | --- |
-| `analysis_run` | 실행 UUID, 기본값까지 확정한 요청 JSON, 입력·엔진 해시, 출처, 상태 |
-| `landing_opportunity_result` | 후보 상한과 무관하게 전체 접지 가능 구간 |
-| `surface_candidate_result` | 실제로 평가한 개별 후보·전이 판정. 주요 수치·상태는 컬럼 |
-| `launch_option_batch` | 실행 당시 모델·가정·엔진 해시·접지 시각·계산 시각 |
-| `launch_touchdown_date` | 실행과 UTC 날짜에 대응하는 발사 후보 묶음 |
-| `launch_option_result` | 발사장별 좌표 사본과 후보. 후보가 없는 발사장도 행으로 보존 |
-| `trajectory_run` | 궤적 POST마다 새 UUID, 선택한 입력 사본·엔진 해시·상태·잔차·delta-v·출처 |
-| `trajectory_sample` | 궤적 실행별 순번·UTC·경과 초·위치 XYZ·속도 XYZ 컬럼 |
+| `analysis_run` | Run ID, effective request including defaults, input and engine fingerprints, source records and state. |
+| `landing_opportunity_result` | Every touchdown window, independent of the candidate limit. |
+| `surface_candidate_result` | Individual evaluated touchdown times, transfer assessments and numerical results. |
+| `launch_option_batch` | Model, assumptions, engine fingerprint, touchdown and calculation time. |
+| `launch_touchdown_date` | The launch batch selected for a given analysis run and UTC date. |
+| `launch_option_result` | A snapshot of each launch site's coordinates and candidate, including sites with no candidate. |
+| `trajectory_run` | A new ID for each calculation, selected inputs, engine fingerprint, state, residual, velocity change and sources. |
+| `trajectory_sample` | Sample order, UTC time, elapsed time and XYZ position and velocity for one trajectory. |
 
-신규 분석에서 표면 조건을 만족한 구간은 `landing_opportunity_result.decision_reasons`에 `SURFACE_CRITERIA_SATISFIED`를 저장합니다. API에서 이 구간의 판정은 `windows[].surfaceStatus`로 확인합니다. 개별 접지 후보의 `candidates[].reasons`는 별도 판정이며 전이 입력을 생략하면 `TRANSFER_INPUTS_MISSING`을 반환합니다. #34 적용 전에 저장된 구간의 사유는 소급 변경하지 않습니다.
+A newly saved qualifying window records `SURFACE_CRITERIA_SATISFIED` in its decision reasons. Read `windows[].surfaceStatus` for the window verdict. Individual candidates have their own reasons. For example, missing transfer inputs produce `TRANSFER_INPUTS_MISSING`. Historical reasons from before change #34 are preserved.
 
-신규 분석은 완료 트랜잭션에서 발사 후보까지 저장합니다. 이후 카탈로그 좌표가 바뀌어도 같은 실행의 후보는 같습니다.
-V7부터 첫 접지 묶음은 빈 `selection_key`를 사용합니다. 선택한 다른 표면 후보의 발사 일정은 같은 실행의 발사장 좌표 사본으로 계산하고 별도의 키로 저장합니다. 날짜와 후보 연결은 같은 트랜잭션에서 저장합니다. 궤적 상세의 `surfaceCandidateId`는 당시 입력 사본에서 읽으며 V7 이전 궤적에는 `null`입니다.
-발사장 카탈로그가 비어 있으면 표면 분석은 성공하고 발사 배치는 `DATA_UNAVAILABLE`로 남습니다. 데이터를 넣은 뒤 새 분석을 요청하세요.
+New analyses save launch options in the same transaction that completes the analysis. Updating a launch site's coordinates later leaves that snapshot intact. If the launch catalogue was empty, the surface analysis can succeed while the launch batch records `DATA_UNAVAILABLE`. Load the catalogue and start a new analysis to use it.
 
-V6 이전 실행은 당시 발사 후보·궤적이 저장되지 않았습니다. 기존 전체 구간에서 접지 후보를 읽는 호환 동작을 유지하고,
-발사 후보는 첫 조회 시 한 번 계산해 **현재 계산 시각**으로 저장합니다. 과거에 저장됐던 결과로 취급하지 않습니다.
-이후 같은 실행의 발사 후보는 재계산하지 않습니다. 과거 궤적은 임의 생성하지 않습니다.
-발사 후보 응답의 `calculatedAt`, `engineSha256`으로 실제 계산 시점과 구현을 확인할 수 있습니다.
+In schema version 7, the first touchdown batch has an empty `selection_key`. Selecting a different surface candidate uses the run's saved launch site coordinates and stores the batch under a separate key. A date selection and its batch are saved in the same transaction. Each saved trajectory reads `surfaceCandidateId` from its input snapshot. Trajectories saved before version 7 return `null` for that field.
 
-기존 궤적 POST는 동기 HTTP 200을 유지합니다. 응답에 `trajectoryRunId`, `executionStatus`, `createdAt`, `startedAt`, `finishedAt`, `engineSha256`이 추가됩니다.
-대기 중 PENDING, 실제 작업 시작 후 RUNNING이며 접수·실행 시작·종료 시각을 구분합니다.
+Runs from before schema version 6 reconstruct their surface candidates from the saved windows. The first launch-options lookup calculates and saves a snapshot using the catalogue and calculation time at that first lookup. Subsequent lookups reuse it. `calculatedAt` and `engineSha256` identify when and how the options were calculated. Historical trajectories exist only when a calculation was saved.
+
+## Retrieve a saved flight path
 
 ```text
 POST /api/v1/analyses/{runId}/launch-options/{candidateId}/trajectory
@@ -99,30 +84,21 @@ GET  /api/v1/analyses/{runId}/trajectories
 GET  /api/v1/analyses/{runId}/trajectories/{trajectoryId}
 ```
 
-목록은 최신 100건입니다. 상세 GET은 저장한 결과·표본만 읽으며 Horizons를 호출하지 않습니다. 상태별 응답과 호출 예시는 [궤적 조회 명세](analysis-api.md#발사-후보에서-저장된-궤적까지-조회하기)를 참고하세요.
-재계산은 POST로 새 실행을 만듭니다. 네트워크 실패도 실행에 남으며 표본은 빈 배열입니다.
-실행 상태 SUCCEEDED는 계산 절차의 완료를 뜻합니다. 실제 판단은 `status`, `lambertStatus`, 검증 플래그를 함께 보세요.
+The POST returns synchronously with HTTP 200. Each calculation has a `trajectoryRunId` and tracks submission, start and finish separately in `createdAt`, `startedAt` and `finishedAt`. `PENDING` means queued and `RUNNING` means the work has started. `engineSha256` identifies the implementation.
 
-기존 표면 분석과 궤적 계산이 작업자 1개·대기열 2개·대기 포함 120초 한도를 공유합니다.
-기한이 지난 작업은 늦은 결과로 덮어쓰지 못하고, 재시작 후 만료된 실행도 실패로 정리합니다.
+The list returns the latest 100 calculations. The detail GET reads stored results and samples without contacting Horizons. A new POST recalculates the trajectory. A failed external request leaves a record with an empty sample list. `SUCCEEDED` means the calculation finished. Read `status`, `lambertStatus` and the verification flags to interpret the outcome. [Trajectory response examples](analysis-api.md#calculate-and-reopen-a-trajectory)
 
-## DB와 배포 호환성
+Surface analysis and trajectory jobs share one worker, two queue slots and a 120-second deadline that includes queue time. Expired workers cannot overwrite later results. Jobs interrupted by a restart are marked as failed after expiry.
 
-Flyway V6는 테이블·인덱스만 추가합니다. V1~V5 파일과 체크섬, 적재된 CSV 데이터, 기존 분석 결과는 수정하지 않습니다.
-신규 테이블에는 사용자 분석 요청으로만 결과가 쌓입니다. CSV 수동 적재 방식과 로컬 Compose 실행 방법은 같습니다.
-새 환경변수·라이브러리·운영 배포 파일은 필요하지 않습니다.
+## Database compatibility and verification
 
-이 작업은 `dev` 대상 PR입니다. PR의 Java·PostgreSQL·Docker 검사를 수행하며, 운영 배포는 기존처럼 `main` push 또는 `main`의 수동 실행에서만 진행합니다.
+Flyway V6 adds tables and indexes while preserving V1–V5 checksums, imported CSVs and earlier results. New result rows come from API requests. The migration uses the existing manual CSV import and Compose setup and requires no new environment variables, libraries or deployment files. Pull requests run CI. Production deployment follows the [release workflow](deployment.md).
 
-## 원본 비교 검증
-
-기본 CI는 네트워크 대신 기록된 원본 fixture와 루프백 HTTP 서버를 사용합니다.
-13개 발사장 전체 후보, Kennedy 궤적 701개 표본, 단경로/장경로 및 사용자 지정 중력계수, 역방향 전파를 비교합니다.
-추가로 원본 폴더가 있는 개발 PC에서는 실제 CLI와 표면 조건 VISIBLE/ANY/OCCULTED, 후보 간격·상한을 바꾼 결과를 비교합니다.
+CI uses recorded fixtures and a loopback HTTP server. The tests compare all 13 launch sites, the Kennedy trajectory's 701 samples, short- and long-way transfers, a custom gravitational parameter and backward propagation. If the original CLI is available locally, set its path to compare the three surface criteria and variations in candidate spacing and limits.
 
 ```powershell
 $env:LLSN_VER2_HOME = 'C:\path\to\LLSN-Java21-ver2'
 .\gradlew.bat --no-daemon check bootJar
 ```
 
-이는 원본 구현과의 회귀 비교이며 독립적인 과학 검증을 의미하지 않습니다.
+These checks measure agreement with the reference implementation. Independent validation of the physical model is a separate task.

@@ -42,7 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
-@Tag(name = "Analyses", description = "후보지 가시성·착륙 기회 분석과 발사 후보별 예비 궤적 계산·조회")
+@Tag(name = "Analyses", description = "Visibility, landing windows and preliminary Earth-to-Moon trajectories")
 public class AnalysisController {
     private final LaunchOptionService launchOptions;
     private final LaunchTrajectoryService trajectories;
@@ -50,8 +50,8 @@ public class AnalysisController {
     private final AnalysisQueryService query;
     private final PostLandingService postLanding;
     @PostMapping("/landing-sites/{id}/analyses")
-    @Operation(summary = "분석 요청", description = "UTC 기준 시작일과 종료일을 모두 포함한 1~31일을 분석합니다. 접수 후 실행 상태를 조회하세요.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202", description = "분석 접수")
+    @Operation(summary = "Start a visibility analysis", description = "Check visibility for 1 to 31 consecutive UTC dates, including both the start and end dates. Follow the Location header to check progress.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202", description = "Analysis accepted")
     public ResponseEntity<ApiResponse<AnalysisResponses.Accepted>> create(@PathVariable @Positive long id,
             @Valid @RequestBody AnalysisRequest request) {
         UUID runId = jobs.submit(id, request);
@@ -59,29 +59,29 @@ public class AnalysisController {
     }
 
     @PostMapping("/landing-sites/{id}/date-opportunities")
-    @Operation(summary = "착륙 기회 분석 요청", description = """
-            후보지 목록의 landingSiteId를 사용합니다. 2027-01-01부터 UTC 마감일까지 10분 간격의 관측값을 읽습니다.
-            날짜만 보내면 해당 날짜 23:59 UTC가 마감입니다. 기본 조건은 태양·지구 모두 VISIBLE, 활동 48시간, 관측자 높이 1m, 후보 간격 10분, 최대 50개입니다.
-            timeStepMinutes(1~1440)는 후보 탐색 간격이며 maxCandidates(1~10000)는 평가할 개별 후보의 상한입니다.
-            개별 후보의 전이를 평가하려면 departureState, arrivalTargetRule, transferDurationHours, preLandingDelayHours, lambert를 함께 보내세요.
-            202 응답의 data.analysisRunId로 실행 상태를 조회한 뒤 SUCCEEDED이면 date-opportunities 결과를 조회하세요.
+    @Operation(summary = "Find landing windows before a deadline", description = """
+            Choose a site using the ID from the landing site list. The search reads observations every ten minutes from 1 January 2027 to the UTC deadline.
+            A date without a time means 23:59 UTC that day. By default, both the Sun and Earth must be visible for 48 hours at a viewing height of one metre.
+            Candidates are tested every ten minutes, up to 50 per run. Set timeStepMinutes (1–1440) and maxCandidates (1–10000) to change these limits.
+            To evaluate a transfer as well, supply departureState, arrivalTargetRule, transferDurationHours, preLandingDelayHours and lambert together.
+            The 202 response includes data.analysisRunId. Follow the Location header and retrieve the landing windows once the run succeeds.
             """, requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = DateOpportunityRequest.class),
                     examples = {
-                        @ExampleObject(name = "기본 조건", value = """
+                        @ExampleObject(name = "Default landing conditions", value = """
                                 {"missionDeadlineUtc":"2027-01-31"}
                                 """),
-                        @ExampleObject(name = "지구가 차폐된 구간에서 1시간 활동", value = """
+                        @ExampleObject(name = "One hour with Earth below the horizon", value = """
                                 {"missionDeadlineUtc":"2027-01-31","surfaceDurationHours":1,
                                  "surfaceCriteria":{"sun":"ANY","earth":"OCCULTED","unknownPolicy":"RECORD_UNKNOWN"},
                                  "timeStepMinutes":60,"maxCandidates":7}
                                 """)
                     })))
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202", description = "분석 접수", useReturnTypeSchema = true)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "202", description = "Analysis accepted", useReturnTypeSchema = true)
     public ResponseEntity<ApiResponse<AnalysisResponses.Accepted>> createOpportunities(@PathVariable @Positive long id,
-            @Parameter(description = "달 표면 위 높이(m). 기준 높이와 다르면 기존 차폐점을 고정한 근사 지평선을 사용합니다.")
+            @Parameter(description = "Viewing height above the lunar surface in metres. At other heights, the model adjusts the horizon using the same terrain obstruction.")
             @RequestParam(defaultValue = "1") double observerHeightAboveSurfaceMeters,
-            @Parameter(description = "표면 활동 시간(h). 지정하면 본문의 값을 대체합니다. 둘 다 생략하면 48시간입니다.")
+            @Parameter(description = "Time needed on the surface in hours. This query parameter takes precedence over the request body. The default is 48 hours.")
             @RequestParam(required = false) BigDecimal surfaceDurationHours,
             @Valid @RequestBody DateOpportunityRequest request) {
         var effective = request.withSurfaceOptions(surfaceDurationHours, observerHeightAboveSurfaceMeters);
@@ -98,61 +98,62 @@ public class AnalysisController {
     }
 
     @GetMapping("/analyses/{runId}")
-    @Operation(summary = "분석 실행 상태 조회", description = """
-            POST 응답의 Location으로 접수한 실행을 조회합니다. PENDING은 대기, RUNNING은 계산 중입니다.
-            SUCCEEDED이면 결과를 조회하고, FAILED이면 failureCode를 확인하세요. overallResultStatus는 결과의 완전성을 나타냅니다.
+    @Operation(summary = "Check the status of an analysis", description = """
+            Follow the Location header returned when the analysis was accepted. PENDING means queued and RUNNING means work has started.
+            Read the results after SUCCEEDED, or check failureCode after FAILED. overallResultStatus tells you how complete the results are.
             """)
     public ApiResponse<AnalysisResponses.Run> get(@PathVariable UUID runId) { return ApiResponse.success(query.get(runId)); }
 
     @GetMapping("/analyses/{runId}/date-opportunities")
-    @Operation(summary = "착륙 가능 구간 및 접지 후보 조회", description = """
-            windows는 표면 활동이 가능한 접지 구간과 그 판정(surfaceStatus)을 담습니다.
-            candidates는 구간에서 개별 평가한 후보입니다. 각 후보의 status, lambertStatus, reasons를 함께 읽으세요.
-            전이 입력을 생략하면 후보는 ENVIRONMENT_ONLY이고 reasons에 TRANSFER_INPUTS_MISSING이 들어갑니다.
-            earliestTouchdownUtc는 첫 SATISFIED 구간의 시작이며, 만족 구간이 없으면 null입니다.
-            arrivalWindows는 모든 후보지에 같은 선택 기준을 적용합니다. 접지 가능 폭도 요청한 활동 시간 이상인 SATISFIED 구간을 시간순으로 반환합니다.
-            TRUNCATED인 실행도 전체 구간을 반환합니다. maxCandidates는 개별 후보 수에 적용됩니다.
+    @Operation(summary = "Get landing windows and individual touchdown candidates", description = """
+            Each window gives a range of possible touchdown times and a surfaceStatus. earliestTouchdownUtc is the start of the first
+            SATISFIED window, or null if none qualifies. The response includes all windows even when the run is TRUNCATED.
+            arrivalWindows lists SATISFIED windows whose touchdown range is at least as long as the requested surface activity, earliest first.
+            The candidate limit applies to individually evaluated touchdown times. Check each candidate's status, lambertStatus and reasons.
+            If you omit the transfer inputs, its status is ENVIRONMENT_ONLY and its reasons include TRANSFER_INPUTS_MISSING.
             """)
     public ApiResponse<AnalysisResponses.Opportunities> opportunities(@PathVariable UUID runId) {
         return ApiResponse.success(query.opportunities(runId));
     }
     @GetMapping("/analyses/{runId}/surface-candidates/{candidateId}/post-landing")
-    @Operation(summary = "선택한 접지 후보에서 본 지구·태양의 하늘 경로", description = """
-            launch-options의 surfaceCandidateId 또는 date-opportunities의 candidates[].candidateId를 사용합니다.
-            접지부터 활동 종료까지 실제 10분 격자 표본을 반환합니다.
-            earth와 sun의 방위각은 현지 북쪽부터 시계 방향, 고도각은 현지 수평면 기준(도)입니다. 중심 고도가 지형 지평선보다 높으면 visible=true입니다.
-            화면의 중간 위치는 프론트에서 주변 10개 표본의 방위각·고도각을 9차 라그랑주 보간합니다. 방위각의 0°/360° 경계는 연속 각도로 펼칩니다.
-            표본이 2~9개이면 선형 보간하며, 가시 여부와 차폐 시각은 원본 표본의 판정을 사용합니다. 구현 예시는 저장소 docs/analysis-api.md에 있습니다.
-            다음 차폐는 접지 이후 첫 차폐 표본(접지 포함)이며 관측 아카이브 끝까지 차폐가 없으면 null입니다.
-            평균은 2027~2028년 UTC 일별 가시율의 백분율입니다. 미등록 후보는 404, 분석 유형·상태 불일치는 409, 관측 누락은 503입니다.
+    @Operation(summary = "See the Sun and Earth from a touchdown site", description = """
+            Pass surfaceCandidateId from launch-options or candidates[].candidateId from date-opportunities. The samples follow the Sun and Earth from touchdown
+            to the end of surface activity on the original ten-minute UTC grid. Azimuth is clockwise from local north. Elevation is measured
+            from the local horizontal in degrees. A body is visible when its centre is above the terrain skyline in that direction.
+            For a smooth sky track, unwrap azimuth across 0/360 degrees and interpolate ten adjacent samples with a ninth-degree Lagrange polynomial.
+            Use linear interpolation for two to nine samples. Read visibility and occultation from the observations. See docs/analysis-api.md for an example.
+            The next occultation is the first blocked sample at or after touchdown, or null if the archive ends first.
+            The mean visibility percentages use daily UTC values for 2027–2028. An unknown candidate returns 404, an incompatible run returns 409,
+            and missing observations return 503.
             """)
     public ApiResponse<PostLandingResponse> postLanding(@PathVariable UUID runId,
-            @Parameter(description = "같은 실행의 접지 후보 ID") @PathVariable String candidateId) {
+            @Parameter(description = "Touchdown candidate returned by this analysis.") @PathVariable String candidateId) {
         return ApiResponse.success(postLanding.get(runId, candidateId));
     }
 
     @GetMapping("/analyses/{runId}/daily-results")
-    @Operation(summary = "일별 결과 조회", description = "date를 지정하면 해당 UTC 날짜만 조회합니다. 진행 중이거나 결과가 없는 날짜는 빈 배열입니다.")
+    @Operation(summary = "Get daily visibility results", description = "Pass a UTC date to read one day. The list is empty while the analysis runs or if that date has no results.")
     public ApiResponse<List<AnalysisResponses.Day>> days(@PathVariable UUID runId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return ApiResponse.success(query.days(runId, date));
     }
 
     @GetMapping("/analyses/{runId}/launch-options")
-    @Operation(summary = "선택한 접지 날짜 또는 표면 후보의 발사장 조회", description = """
-            선택을 생략하면 첫 SATISFIED 접지 시각의 기존 발사장 목록을 반환합니다.
-            touchdownDateUtc를 지정하면 만족 구간별 후보 간격과 종료점을 따라 해당 UTC 날짜의 발사 가능한 첫 접지 시각을 선택합니다.
-            touchdownUtc는 표시된 접지 시각(예: arrivalWindows[].startUtc), surfaceCandidateId는 개별 표면 후보를 그대로 선택합니다.
-            세 선택자 중 하나만 지정할 수 있습니다.
-            선택 조회는 발사 가능한 발사장만 반환하며 유효한 접지 시각에 발사장이 없으면 200과 빈 launchSites를 반환합니다.
-            날짜에 만족 구간이 없으면 422, 알 수 없는 표면 후보는 404, 발사장 기준 데이터 누락은 503입니다.
-            궤적 POST에는 launchSites[].candidates[].candidateId, 착륙 후 조회에는 surfaceCandidateId를 전달하세요.
+    @Operation(summary = "Compare launch sites for a selected touchdown", description = """
+            Without a selector, the response lists all launch sites for the first qualifying touchdown. Supply at most one selector.
+            touchdownDateUtc selects the earliest launchable touchdown on that UTC date using the saved candidate spacing and window endpoints.
+            touchdownUtc selects an exact grid time or window endpoint. surfaceCandidateId selects the touchdown of that surface candidate.
+            A selected touchdown returns only sites with a launch candidate, or HTTP 200 and an empty launchSites list if none is available.
+            An unavailable touchdown returns 422, an unknown surface candidate returns 404 and a missing launch catalogue returns 503.
+            Use launchSites[].candidates[].candidateId for the trajectory and surfaceCandidateId for the post-landing view.
+            calculatedAt records when the options were calculated. Analyses created before schema version 6 use site coordinates from the first lookup.
             """)
     public ApiResponse<LaunchOptionsResponse> launchOptions(@PathVariable UUID runId,
-            @Parameter(schema = @Schema(type = "string", format = "date"), description = "UTC 접지 날짜 (YYYY-MM-DD)")
+            @Parameter(schema = @Schema(type = "string", format = "date"), description = "UTC touchdown date (YYYY-MM-DD).")
             @RequestParam(required = false) String touchdownDateUtc,
-            @Parameter(schema = @Schema(type = "string", format = "date-time"), description = "목록에서 선택한 정확한 UTC 접지 시각")
+            @Parameter(schema = @Schema(type = "string", format = "date-time"), description = "Exact touchdown time, such as arrivalWindows[].startUtc.")
             @RequestParam(required = false) String touchdownUtc,
+            @Parameter(description = "Surface candidate ID from this analysis.")
             @RequestParam(required = false) String surfaceCandidateId) {
         try {
             LocalDate date = touchdownDateUtc == null ? null : LocalDate.parse(touchdownDateUtc);
@@ -164,41 +165,40 @@ public class AnalysisController {
     }
 
     @PostMapping("/analyses/{runId}/launch-options/{candidateId}/trajectory")
-    @Operation(summary = "선택한 발사 후보의 예비 달 전이 궤적 계산", description = """
-            성공한 착륙 기회 분석의 발사 후보를 선택합니다. 요청 본문은 없습니다.
-            호출할 때마다 새 trajectoryRunId로 계산하고 결과를 저장한 뒤 동기 응답합니다. 같은 결과를 다시 보려면 상세 GET을 사용하세요.
-            HTTP 200에서도 data.status가 FAILED일 수 있습니다. 이때 reason에 계산 실패 사유가 들어갑니다.
-            404는 실행·후보가 없을 때, 409는 분석 종류·실행 상태가 맞지 않을 때, 429는 작업 한도 초과,
-            503은 필요한 발사장 데이터가 비어 있을 때 반환합니다.
+    @Operation(summary = "Calculate a preliminary flight path to the Moon", description = """
+            Select a launch option from a successful landing-window analysis and send an empty request body.
+            Each POST creates a new trajectoryRunId, saves its result and then returns. Use the detail GET to reopen the same result.
+            HTTP 200 can include a failed calculation. Check data.status and reason. An unknown run or candidate returns 404,
+            an incompatible analysis type or state returns 409, a full queue returns 429, and missing launch site data returns 503.
             """)
     public ApiResponse<LaunchTrajectoryResponse> trajectory(@PathVariable UUID runId,
-            @Parameter(description = "같은 분석의 launchSites[].candidates[].candidateId", example = "Kennedy-1799883120")
+            @Parameter(description = "Launch candidate from the selected site in this analysis (launchSites[].candidates[].candidateId).", example = "Kennedy-1799883120")
             @PathVariable String candidateId) {
         return ApiResponse.success(trajectories.calculate(runId, candidateId));
     }
 
     @GetMapping("/analyses/{runId}/trajectories/{trajectoryId}")
-    @Operation(summary = "저장된 궤적 실행 및 표본 조회", description = """
-            같은 분석에 속한 trajectoryRunId로 저장된 결과를 조회합니다. 외부 API 호출은 발생하지 않습니다.
-            PENDING·RUNNING·FAILED이면 samples는 빈 배열입니다. SUCCEEDED이면 status를 확인하세요.
-            PRELIMINARY는 TLI부터 달 도착까지의 표본을 반환하고 NO_PRELIMINARY_SOLUTION은 빈 배열과 사유를 반환합니다.
-            두 ID가 일치하는 기록이 없으면 HTTP 404 TRAJECTORY_NOT_FOUND입니다.
+    @Operation(summary = "Retrieve a saved trajectory", description = """
+            Use the trajectoryRunId from this analysis to read its stored result without calling Horizons again.
+            The samples array is empty while the job is PENDING or RUNNING and when it has FAILED. After SUCCEEDED, inspect status.
+            PRELIMINARY includes samples from translunar injection (TLI) to lunar arrival. NO_PRELIMINARY_SOLUTION includes an empty list and a reason.
+            A trajectory that does not belong to the specified analysis returns HTTP 404 (TRAJECTORY_NOT_FOUND).
             """)
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "저장된 실행의 상태와 결과", useReturnTypeSchema = true)
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "해당 분석의 궤적 기록 없음",
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Status and results of the saved trajectory calculation", useReturnTypeSchema = true)
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No matching trajectory for this analysis. Example message shown in English.",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
-                    examples = @ExampleObject(name = "궤적 기록 없음", value = """
-                            {"success":false,"code":"TRAJECTORY_NOT_FOUND","message":"궤적 실행을 찾을 수 없습니다.","data":null}
+                    examples = @ExampleObject(name = "Trajectory not found", value = """
+                            {"success":false,"code":"TRAJECTORY_NOT_FOUND","message":"Trajectory run not found.","data":null}
                             """)))
     public ApiResponse<LaunchTrajectoryResponse> storedTrajectory(@PathVariable UUID runId, @PathVariable UUID trajectoryId) {
         return ApiResponse.success(trajectories.get(runId, trajectoryId));
     }
 
     @GetMapping("/analyses/{runId}/trajectories")
-    @Operation(summary = "최근 궤적 실행 100건 조회", description = """
-            분석 실행의 궤적 이력을 접수 시각(createdAt) 내림차순으로 최대 100건 조회합니다.
-            목록은 상태와 시각을 담은 요약입니다. 위치·속도 표본은 각 trajectoryRunId의 상세 GET으로 조회하세요.
-            기존 분석에 이력이 없으면 HTTP 200과 빈 배열, 분석 ID가 없으면 HTTP 404 ANALYSIS_NOT_FOUND입니다.
+    @Operation(summary = "List the 100 most recent trajectory calculations", description = """
+            Return up to 100 calculations for this analysis, newest first by submission time (createdAt).
+            Each summary includes status and times. Use its trajectoryRunId to retrieve position and velocity samples.
+            An analysis with no trajectory history returns HTTP 200 and an empty list. An unknown analysis returns HTTP 404 (ANALYSIS_NOT_FOUND).
             """)
     public ApiResponse<List<LaunchTrajectoryResponse.Summary>> trajectoryHistory(@PathVariable UUID runId) {
         return ApiResponse.success(trajectories.list(runId));
