@@ -20,7 +20,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -116,6 +115,18 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
             assertThat(candidates.get(i).path("proposedLandingUtc").asString())
                     .isEqualTo(first.plusSeconds(i * 600L).toString());
         }
+    }
+
+    @Test
+    void savedRunsWithEmptyCandidateHistoryStillReturnTheirTouchdownWindows() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        jdbc.update("update analysis_run set analysis_parameters = '{\"request\":{}}' where analysis_run_id = ?", id);
+        window(id, "SATISFIED", TOUCHDOWN);
+
+        var result = dateOpportunities(id);
+        assertThat(result.path("earliestTouchdownUtc").asString()).isEqualTo(TOUCHDOWN);
+        assertThat(result.path("windows").size()).isOne();
+        assertThat(result.path("candidates")).isEmpty();
     }
 
     @Test

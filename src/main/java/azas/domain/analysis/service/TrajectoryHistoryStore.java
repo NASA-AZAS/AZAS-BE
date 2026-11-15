@@ -63,7 +63,11 @@ public class TrajectoryHistoryStore {
                 from trajectory_run where trajectory_run_id = ? for update
                 """, Boolean.class, prepared.id());
         if (!Boolean.TRUE.equals(active)) { fail(prepared.id(), "ANALYSIS_TIMEOUT"); return; }
-        jdbc.batchUpdate("insert into trajectory_sample values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", result.samples(), 1000,
+        jdbc.batchUpdate("""
+                insert into trajectory_sample (trajectory_run_id, sample_index, observed_at, elapsed_seconds,
+                        position_x_km, position_y_km, position_z_km, velocity_x_km_s, velocity_y_km_s, velocity_z_km_s)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, result.samples(), 1000,
                 new org.springframework.jdbc.core.ParameterizedPreparedStatementSetter<LaunchTrajectoryResponse.Sample>() {
                     int index;
                     public void setValues(java.sql.PreparedStatement ps, LaunchTrajectoryResponse.Sample sample) throws java.sql.SQLException {

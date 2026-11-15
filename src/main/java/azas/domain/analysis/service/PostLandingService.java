@@ -8,7 +8,6 @@ import azas.domain.analysis.dto.PostLandingResponse;
 import azas.domain.analysis.dto.PostLandingResponse.Body;
 import azas.domain.analysis.dto.PostLandingResponse.Occultations;
 import azas.domain.analysis.dto.PostLandingResponse.Sample;
-import azas.domain.analysis.entity.AnalysisRun;
 import azas.domain.analysis.exception.AnalysisErrorCode;
 import azas.domain.analysis.model.AnalysisType;
 import azas.domain.analysis.model.ExecutionStatus;
@@ -41,12 +40,12 @@ public class PostLandingService {
         var run = runs.findById(runId).orElseThrow(() -> new BusinessException(AnalysisErrorCode.RUN_NOT_FOUND));
         if (run.getAnalysisType() != AnalysisType.DATE_OPPORTUNITIES) throw new BusinessException(AnalysisErrorCode.TYPE_MISMATCH);
         if (run.getExecutionStatus() != ExecutionStatus.SUCCEEDED) throw new BusinessException(AnalysisErrorCode.RUN_NOT_SUCCEEDED);
-        var period = period(run, candidateId);
+        var parameters = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters());
+        var period = candidatePeriod(runId, candidateId, parameters.has("request"));
         if (period.touchdown().isBefore(DateOpportunityRequest.SEARCH_START) || period.end().isAfter(DateOpportunityRequest.ARCHIVE_END)) {
             throw new BusinessException(AnalysisErrorCode.OBSERVER_DATA_INCOMPLETE);
         }
         var site = run.getLandingSite();
-        var parameters = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters());
         double referenceHeight = parameters.path("referenceObserverHeightAboveSurfaceMeters")
                 .asDouble(site.getObserverHeightAboveSurfaceMeters());
         double observerHeight = parameters.path("site").path("observerHeightAboveSurfaceMeters").asDouble(referenceHeight);
@@ -61,13 +60,13 @@ public class PostLandingService {
                 track.samples);
     }
 
-    private SurfacePeriod period(AnalysisRun run, String candidateId) {
-        if (CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters()).has("request")) {
-            return history.findPeriod(run.getId(), candidateId)
+    private SurfacePeriod candidatePeriod(UUID runId, String candidateId, boolean hasStoredCandidates) {
+        if (hasStoredCandidates) {
+            return history.findPeriod(runId, candidateId)
                     .orElseThrow(() -> new BusinessException(AnalysisErrorCode.SURFACE_CANDIDATE_NOT_FOUND));
         }
         // Pre-V6 runs expose candidates reconstructed from their original landing windows.
-        return legacyResults.opportunities(run.getId()).candidates().stream().filter(c -> c.candidateId().equals(candidateId))
+        return legacyResults.legacyCandidates(runId).stream().filter(c -> c.candidateId().equals(candidateId))
                 .map(c -> new SurfacePeriod(c.proposedLandingUtc(), c.surfaceFinishUtc())).findFirst()
                 .orElseThrow(() -> new BusinessException(AnalysisErrorCode.SURFACE_CANDIDATE_NOT_FOUND));
     }
