@@ -15,4 +15,6 @@ Upstream source SHA-256 at integration:
 | Terrain.java | `cbd0ac889eb426c06298845e1a0468171498e1cc1aa8bf986b73cd58344927b1` |
 | Horizons.java | `450a060b9a0f7ea294daa231a367a6e5461a8a70e42c9cf87d4b264abaf8c34c` |
 
-Only the visibility calculation is integrated. File/CLI orchestration and Horizons cache handling were replaced by the backend entry adapter and HTTP client. UTC daily aggregation is an integration addition and is checked against upstream per-epoch states.
+For the visibility fixtures above, file/CLI orchestration and Horizons cache handling were replaced by the backend entry adapter and HTTP client. UTC daily aggregation is an integration addition and is checked against upstream per-epoch states.
+
+`launch-options-golden.json` contains the formatted output of LLSN ver2 `launch-options results/launch-flow-example/date_opportunities.json Site01`. The original output SHA-256 is `32a84857fea5d6e47fd57ba731d13a8712e9fccb4883dcc51af689937749a381`. The API test uses these 13 test-only sites and compares every candidate and its UTC timestamps.

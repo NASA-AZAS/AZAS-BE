@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "launch-options",
+  "lunarSiteId": "Site01",
+  "windowNumber": 1,
+  "touchdownUtc": "2027-01-19T04:10:00Z",
+  "touchdownWindow": {
+    "startUtc": "2027-01-19T04:10:00Z",
+    "endUtc": "2027-01-21T10:40:00Z",
+    "surfaceStatus": "SATISFIED",
+    "supportEndUtc": "2027-01-23T10:40:00Z"
+  },
+  "launchSites": [
+    {
+      "launchSiteId": "Kennedy",
+      "latitudeDeg": 28.61,
+      "longitudeDegEast": -80.6,
+      "candidates": [
+        {
+          "candidateId": "Kennedy-1799883120",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-13T23:32:00Z",
+          "tliUtc": "2027-01-14T01:32:00Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Cape_Canaveral",
+      "latitudeDeg": 28.56,
+      "longitudeDegEast": -80.58,
+      "candidates": [
+        {
+          "candidateId": "Cape_Canaveral-1799883101",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-13T23:31:41Z",
+          "tliUtc": "2027-01-14T01:31:41Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Vandenberg",
+      "latitudeDeg": 34.77,
+      "longitudeDegEast": -120.6,
+      "candidates": [
+        {
+          "candidateId": "Vandenberg-1799894553",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-14T02:42:33Z",
+          "tliUtc": "2027-01-14T04:42:33Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Wallops",
+      "latitudeDeg": 37.84,
+      "longitudeDegEast": -75.49,
+      "candidates": [
+        {
+          "candidateId": "Wallops-1799884861",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-14T00:01:01Z",
+          "tliUtc": "2027-01-14T02:01:01Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Baikonur",
+      "latitudeDeg": 45.96,
+      "longitudeDegEast": 63.35,
+      "candidates": [
+        {
+          "candidateId": "Baikonur-1799872442",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-13T20:34:02Z",
+          "tliUtc": "2027-01-13T22:34:02Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Vostochny",
+      "latitudeDeg": 51.882,
+      "longitudeDegEast": 128.332,
+      "candidates": []
+    },
+    {
+      "launchSiteId": "Xichang",
+      "latitudeDeg": 28.25,
+      "longitudeDegEast": 102.03,
+      "candidates": [
+        {
+          "candidateId": "Xichang-1799925474",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-14T11:17:54Z",
+          "tliUtc": "2027-01-14T13:17:54Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Wenchang",
+      "latitudeDeg": 19.614,
+      "longitudeDegEast": 110.951,
+      "candidates": [
+        {
+          "candidateId": "Wenchang-1799921233",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-14T10:07:13Z",
+          "tliUtc": "2027-01-14T12:07:13Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Tanegashima",
+      "latitudeDeg": 30.39,
+      "longitudeDegEast": 130.97,
+      "candidates": [
+        {
+          "candidateId": "Tanegashima-1799919144",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-14T09:32:24Z",
+          "tliUtc": "2027-01-14T11:32:24Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Uchinoura",
+      "latitudeDeg": 31.25,
+      "longitudeDegEast": 131.08,
+      "candidates": [
+        {
+          "candidateId": "Uchinoura-1799919369",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-14T09:36:09Z",
+          "tliUtc": "2027-01-14T11:36:09Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Sriharikota",
+      "latitudeDeg": 13.73,
+      "longitudeDegEast": 80.23,
+      "candidates": [
+        {
+          "candidateId": "Sriharikota-1799878905",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-13T22:21:45Z",
+          "tliUtc": "2027-01-14T00:21:45Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Kourou",
+      "latitudeDeg": 5.24,
+      "longitudeDegEast": -52.77,
+      "candidates": [
+        {
+          "candidateId": "Kourou-1799871326",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-13T20:15:26Z",
+          "tliUtc": "2027-01-13T22:15:26Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    },
+    {
+      "launchSiteId": "Mahia",
+      "latitudeDeg": -39.26,
+      "longitudeDegEast": 177.86,
+      "candidates": [
+        {
+          "candidateId": "Mahia-1799891628",
+          "status": "GEOMETRIC_ONLY",
+          "launchUtc": "2027-01-14T01:53:48Z",
+          "tliUtc": "2027-01-14T03:53:48Z",
+          "lunarArrivalUtc": "2027-01-18T22:10:00Z",
+          "proposedLandingUtc": "2027-01-19T04:10:00Z"
+        }
+      ]
+    }
+  ],
+  "model": "ILLUSTRATIVE_FIXED_PARKING_PLANE",
+  "launchVerified": false,
+  "assumptions": {
+    "inclinationDeg": 51.6,
+    "raanDeg": 0,
+    "parkingAltitudeKm": 300,
+    "launchToTliSeconds": 7200,
+    "minTransferSeconds": 172800,
+    "maxTransferSeconds": 432000,
+    "arrivalToTouchdownSeconds": 21600
+  }
+}

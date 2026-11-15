@@ -19,7 +19,7 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
         flyway.migrate();
 
         try (Connection connection = connect(database)) {
-            for (String table : new String[] {"terrain_dataset", "landing_site", "horizon_sample", "observer_sample"}) {
+            for (String table : new String[] {"terrain_dataset", "landing_site", "horizon_sample", "observer_sample", "launch_site"}) {
                 assertThat(count(connection, table)).isZero();
             }
         }
@@ -69,13 +69,14 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
         }
 
         Flyway current = flyway(database);
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(2); // V3 execution lease and V4 observations
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(3); // V3 lease, V4 observations, V5 launch sites
         assertThat(current.validateWithResult().validationSuccessful).isTrue();
         assertThat(current.migrate().migrationsExecuted).isZero();
 
         try (Connection connection = connect(database); var statement = connection.createStatement()) {
             assertThat(count(connection, "analysis_run")).isEqualTo(1);
             assertThat(count(connection, "observer_sample")).isZero();
+            assertThat(count(connection, "launch_site")).isZero();
             assertThat(count(connection, "landing_site")).isEqualTo(27);
             assertThat(count(connection, "horizon_sample")).isEqualTo(97200);
 

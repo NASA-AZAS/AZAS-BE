@@ -92,6 +92,13 @@ Table observer_sample {
   Note: 'ver2 태양·지구 관측 입력. 각도의 단위는 도.'
 }
 
+Table launch_site {
+  launch_site_id bigint [pk, note: 'ver2 원본에서 부여한 행 순번. 1부터 시작']
+  site_code varchar(50) [not null, unique]
+  latitude_degrees "double precision" [not null]
+  longitude_degrees_east "double precision" [not null, note: '동경 양수·서경 음수']
+}
+
 Table analysis_run {
   analysis_run_id uuid [pk]
   landing_site_id bigint [not null]

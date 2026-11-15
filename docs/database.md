@@ -42,7 +42,7 @@ PostgreSQL 데이터 소스를 만들고 다음 값을 입력한 뒤 연결을 �
 | JDBC URL | `jdbc:postgresql://localhost:55432/azas?sslmode=disable` |
 
 DataGrip은 호스트에서 실행하므로 `localhost:55432`를 사용합니다. Docker 안의 Spring만 서비스명 `postgres:5432`를 사용합니다.
-연결 후 `public` 스키마를 선택하고 새로고침하면 업무 테이블 8개와 `flyway_schema_history`가 보입니다.
+연결 후 `public` 스키마를 선택하고 새로고침하면 업무 테이블 9개와 `flyway_schema_history`가 보입니다.
 Spring 시작 전에는 마이그레이션이 실행되지 않아 테이블이 없을 수 있습니다.
 
 ```sql
@@ -115,6 +115,10 @@ Flyway는 앱 시작 시 SQL과 Java 마이그레이션을 버전 순서대로 �
 `V1__create_terrain_and_analysis_tables.sql`은 확정 ERD의 7개 테이블을 생성하고,
 Java 마이그레이션 `V2__import_landing_screen_v1`은 기존 체크섬을 유지하는 빈 이력입니다.
 V4는 후보지 PK와 관측 시각을 복합 키로 사용하는 `observer_sample`을 생성합니다. ver2 관측 CSV는 배포 후 DataGrip에서 수동 업로드합니다.
+V5는 지구 발사장 기준 테이블 `launch_site`를 생성합니다. 다른 테이블과의 FK가 없어 V5 적용 직후 DataGrip에서 독립적으로 업로드할 수 있습니다.
+`LLSN-Java21-ver2/experiments/launch_sites.csv`의 데이터 행에 원본 순서대로 1~13을 부여해 `launch_site_id`로 사용합니다.
+원본 `site`, `latitudeDeg`, `longitudeDegEast`는 각각 `site_code`, `latitude_degrees`, `longitude_degrees_east`에 매핑합니다.
+`launch_site_id`는 명시적으로 올리는 PK이므로 시퀀스 보정은 필요 없습니다. 업로드 후 13개 행의 PK·코드·좌표를 원본과 대조하세요.
 후보지 CSV는 앱에서 읽지 않으며 DataGrip으로 직접 업로드합니다.
 Java 마이그레이션은 `src/main/java/db/migration/`, SQL은 `src/main/resources/db/migration/`에 있습니다.
 데이터 출처·행 수·버전 갱신 정책은 [지형 데이터 가이드](terrain-data.md)를 참고하세요.

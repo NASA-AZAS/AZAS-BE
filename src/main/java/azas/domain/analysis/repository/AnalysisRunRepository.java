@@ -16,6 +16,12 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, UUID> 
     @Query("select run from AnalysisRun run where run.id = :id")
     Optional<AnalysisRun> lockById(@Param("id") UUID id);
 
+    @Query("""
+            select min(result.landingWindowStartAt) from LandingOpportunityResult result
+            where result.analysisRun.id = :id and result.surfaceConditionStatus = 'SATISFIED'
+            """)
+    Optional<Instant> findEarliestSatisfiedTouchdown(@Param("id") UUID id);
+
     @Modifying
     @Query(value = """
             update analysis_run set execution_status = 'FAILED', overall_result_status = 'FAILED',

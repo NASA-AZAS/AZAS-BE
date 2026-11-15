@@ -139,3 +139,18 @@ $env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djavax.net.ssl.trustStoreType=
 ```
 
 운영 실행 방법과 CI/CD 경계는 [배포 가이드](deployment.md)를 참고하세요.
+
+## 첫 접지 시각 기준 발사장 후보
+
+`GET /api/v1/analyses/{runId}/launch-options`에 착륙 기회 분석의 실행 ID를 전달합니다. 응답의 `data.landingSiteId`는 해당 실행의 달 후보지 PK이고, `data.touchdownUtc`는 해당 실행에서 표면 조건을 만족한 가장 이른 구간의 시작(UTC)입니다. `executionStatus`가 `SUCCEEDED`인 실행에서 조회할 수 있으며, 전체 결과가 `TRUNCATED`여도 저장된 접지 구간을 모두 대상으로 합니다.
+
+`launchSites`는 `launchSiteId`(발사장 PK) 순서입니다. 각 항목에는 원본 `launchSiteCode`, 위도·동경 기준 경도, `candidates`가 있습니다. `candidates`는 빈 배열이거나 가장 이른 후보 한 개입니다. 후보에는 `candidateId`, `launchUtc`, `tliUtc`(달 전이 진입), `lunarArrivalUtc`, `proposedLandingUtc`가 있습니다.
+
+`ILLUSTRATIVE_FIXED_PARKING_PLANE` 모델은 경사각 51.6°, 승교점 적경 0°, 고도 300 km를 가정합니다. 접지 6시간 전을 달 도착으로 두고, 발사 2시간 뒤의 달 전이 진입부터 도착까지 48~120시간이며 발사가 분석 시작 시각 이후인 교차점을 찾습니다. 예시의 `2027-01-19T04:10:00Z` 접지에 대해 Kennedy의 후보는 `Kennedy-1799883120`(`2027-01-13T23:32:00Z`)이고 Vostochny의 후보는 0개입니다. `GEOMETRIC_ONLY`와 `launchVerified=false`는 기하학적 후보임을 나타냅니다.
+
+| 상황 | 응답 |
+| --- | --- |
+| `PENDING`, `RUNNING`, `FAILED` 또는 성공했지만 만족 구간이 없음 | 200, 해당 `executionStatus`, `touchdownUtc=null`, `launchSites=[]` |
+| 접지 시각이 있고 발사장 데이터가 있음 | 200, 등록된 각 발사장 반환. 후보가 없는 발사장도 `candidates=[]`로 포함 |
+| 접지 시각이 있고 발사장 테이블이 비어 있음 | 503 `LAUNCH_SITE_DATA_INCOMPLETE` |
+| 실행 ID 없음 / 실행 종류 불일치 | 404 `ANALYSIS_NOT_FOUND` / 409 `ANALYSIS_TYPE_MISMATCH` |
