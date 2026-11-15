@@ -54,14 +54,20 @@ public class LaunchOptionService {
     public void capture(UUID id, Instant start, Instant touchdown) {
         var catalog = touchdown == null ? List.<azas.domain.analysis.entity.LaunchSite>of() : sites.findAllByOrderByIdAsc();
         jdbc.update("""
-                insert into launch_option_batch values (?, ?, ?, ?, ?::jsonb, ?, ?)
+                insert into launch_option_batch (analysis_run_id, calculated_at, engine_sha256, model,
+                        assumptions, touchdown_at, status)
+                values (?, ?, ?, ?, ?::jsonb, ?, ?)
                 """, id, time(Instant.now()), LaunchOptionCalculator.fingerprint(), LaunchOptionCalculator.MODEL,
                 JSON.writeValueAsString(LaunchOptionCalculator.ASSUMPTIONS), time(touchdown),
                 touchdown == null ? "NO_WINDOW" : catalog.isEmpty() ? "DATA_UNAVAILABLE" : "READY");
         for (var site : catalog) {
             var candidates = LaunchOptionCalculator.candidates(site.getSiteCode(), site.getLatitudeDegrees(), site.getLongitudeDegreesEast(), start, touchdown);
             var c = candidates.isEmpty() ? null : candidates.getFirst();
-            jdbc.update("insert into launch_option_result values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, site.getId(), site.getSiteCode(),
+            jdbc.update("""
+                    insert into launch_option_result (analysis_run_id, launch_site_id, site_code, latitude_degrees,
+                            longitude_degrees_east, status, candidate_code, launch_at, tli_at, lunar_arrival_at, proposed_landing_at)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, id, site.getId(), site.getSiteCode(),
                     site.getLatitudeDegrees(), site.getLongitudeDegreesEast(), c == null ? "NO_CANDIDATE" : c.status(),
                     c == null ? null : c.candidateId(), c == null ? null : time(c.launchUtc()), c == null ? null : time(c.tliUtc()),
                     c == null ? null : time(c.lunarArrivalUtc()), c == null ? null : time(c.proposedLandingUtc()));

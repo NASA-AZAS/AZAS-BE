@@ -63,16 +63,38 @@ public class AnalysisQueryService {
         if (run.getExecutionStatus() != ExecutionStatus.SUCCEEDED) {
             return new AnalysisResponses.Opportunities(id, null, List.of(), List.of());
         }
+
+        var intervals = touchdownWindows(id);
+        var earliest = intervals.stream().filter(window -> "SATISFIED".equals(window.surfaceStatus()))
+                .map(AnalysisResponses.TouchdownWindow::startUtc).min(Instant::compareTo).orElse(null);
+        boolean hasStoredCandidates = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters()).has("request");
+        var candidates = hasStoredCandidates ? history.get(id) : reconstructLegacyCandidates(id, intervals);
+        return new AnalysisResponses.Opportunities(id, earliest, intervals, candidates);
+    }
+
+    private List<AnalysisResponses.TouchdownWindow> touchdownWindows(UUID id) {
         var intervals = new ArrayList<AnalysisResponses.TouchdownWindow>();
-        var candidates = new ArrayList<AnalysisResponses.SurfaceCandidate>();
         for (var row : opportunities.findByAnalysisRunIdOrderByLandingWindowStartAt(id)) {
             Instant start = row.getLandingWindowStartAt(), end = row.getLandingWindowEndAt();
             Duration activity = Duration.between(row.getProposedLandingAt(), row.getSurfaceActivityFinishedAt());
-            String surfaceStatus = row.getSurfaceConditionStatus();
-            intervals.add(new AnalysisResponses.TouchdownWindow(start, end, end.plus(activity), surfaceStatus));
-            if (!"SATISFIED".equals(surfaceStatus)) continue;
+            intervals.add(new AnalysisResponses.TouchdownWindow(start, end, end.plus(activity), row.getSurfaceConditionStatus()));
+        }
+        return intervals;
+    }
 
-            Instant time = start;
+    List<AnalysisResponses.SurfaceCandidate> legacyCandidates(UUID id) {
+        return reconstructLegacyCandidates(id, touchdownWindows(id));
+    }
+
+    private static List<AnalysisResponses.SurfaceCandidate> reconstructLegacyCandidates(
+            UUID id, List<AnalysisResponses.TouchdownWindow> intervals) {
+        var candidates = new ArrayList<AnalysisResponses.SurfaceCandidate>();
+        for (var window : intervals) {
+            if (!"SATISFIED".equals(window.surfaceStatus())) continue;
+
+            Instant end = window.endUtc();
+            Duration activity = Duration.between(end, window.supportEndUtc());
+            Instant time = window.startUtc();
             while (candidates.size() < DateOpportunityEngine.MAX_CANDIDATES) {
                 String code = String.format(Locale.ROOT, "%s-%05d", id, candidates.size() + 1);
                 candidates.add(new AnalysisResponses.SurfaceCandidate(code, time, time.plus(activity)));
@@ -81,9 +103,6 @@ public class AnalysisQueryService {
                 time = next.isAfter(end) ? end : next;
             }
         }
-        boolean persisted = CandidateHistoryStore.JSON.readTree(run.getAnalysisParameters()).has("request");
-        return new AnalysisResponses.Opportunities(id, intervals.stream().filter(w -> w.surfaceStatus().equals("SATISFIED"))
-                .map(AnalysisResponses.TouchdownWindow::startUtc).min(Instant::compareTo).orElse(null),
-                intervals, persisted ? history.get(id) : candidates);
+        return candidates;
     }
 }
