@@ -16,7 +16,8 @@ Docker Desktop과 Compose 2.24 이상을 준비하고 저장소 루트에서 실
 docker compose --env-file docker/postgres.env --file compose.local.yaml up --build --detach --wait --wait-timeout 180
 ```
 
-Spring이 시작되면 Flyway가 테이블을 생성하고 후보지 27개·지평선 표본 97,200개를 최초 한 번 적재합니다.
+Spring이 시작되면 Flyway가 테이블만 생성합니다. 새 DB에는 [DataGrip 업로드 안내](docs/terrain-data.md)에 따라
+후보지 27개·지평선 표본 97,200개를 직접 넣으세요. 이미 적재된 DB는 그대로 사용합니다.
 DataGrip에서는 아래 값으로 PostgreSQL에 연결하세요.
 
 | 항목 | 값 |
@@ -80,7 +81,7 @@ Gradle group과 프로젝트명은 `azas`이며, Java 기본 패키지도 `azas`
 src/main/java/azas/
   AzasApplication.java
   domain/
-    landingsite/        # 후보지 조회 API·지형 데이터·CSV 적재
+    landingsite/        # 후보지 조회 API·지형 데이터
     analysis/           # 기간 분석 API·분석 코드 연결·결과 저장
   global/
     config/             # CORS, OpenAPI, 앱 설정
@@ -90,8 +91,8 @@ src/main/java/azas/
 src/main/resources/
   application.yaml
   db/migration/         # Flyway 업무 SQL
-  terrain/              # 버전 고정 원본 CSV와 검증 메타데이터
-src/main/java/db/migration/ # Flyway Java 데이터 적재
+src/main/java/db/migration/ # 기존 V2 이력 호환용 빈 마이그레이션
+data/import/            # DataGrip 수동 업로드용 CSV, 앱 이미지에서 제외
 src/test/               # 실제 PostgreSQL 기반 통합 테스트
 compose.local.yaml      # 로컬 PostgreSQL·Spring
 docker/postgres.env     # 로컬·CI PostgreSQL 이미지 digest

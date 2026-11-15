@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
+import org.flywaydb.core.Flyway;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -11,7 +12,7 @@ import org.testcontainers.utility.DockerImageName;
 
 public abstract class PostgresIntegrationTest {
 
-    private static final PostgreSQLContainer POSTGRES = createDatabase();
+    protected static final PostgreSQLContainer POSTGRES = createDatabase();
 
     private static PostgreSQLContainer createDatabase() {
         Properties properties = new Properties();
@@ -28,6 +29,15 @@ public abstract class PostgresIntegrationTest {
         postgres.withDatabaseName("azas_test").withUsername("azas_test").withPassword("test_only_password");
         // A single container per test JVM; Testcontainers cleans it up at JVM exit.
         postgres.start();
+
+        Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration").load().migrate();
+
+        try {
+            TerrainTestData.copyInto(postgres, postgres.getDatabaseName());
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not load test-only terrain fixtures", exception);
+        }
 
         return postgres;
     }

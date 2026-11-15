@@ -3,7 +3,6 @@ package azas.domain.analysis.engine;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import azas.domain.landingsite.importer.LandingScreenDatasetV1;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -18,9 +17,7 @@ class VisibilityCalculatorTests {
 
     @Test
     void matchesEveryObservationInBothUpstreamScenariosAndReaggregatesEachDay() throws Exception {
-        var original = LandingScreenDatasetV1.load().sites().stream().filter(site -> site.code().equals("Site01"))
-                .findFirst().orElseThrow();
-        var profile = new VisibilityCalculator.Horizon(java.util.Arrays.stream(original.samples()).map(row -> row[1]).toList());
+        var profile = new VisibilityCalculator.Horizon(HorizonFixture.site01());
         var fixture = JsonMapper.builder().build().readTree(getClass().getResourceAsStream("/analysis/llsn-golden.json"));
 
         for (JsonNode scenario : fixture.path("scenarios")) {

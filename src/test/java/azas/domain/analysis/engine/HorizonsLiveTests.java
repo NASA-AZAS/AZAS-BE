@@ -2,7 +2,6 @@ package azas.domain.analysis.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import azas.domain.landingsite.importer.LandingScreenDatasetV1;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -11,11 +10,9 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 @EnabledIfEnvironmentVariable(named = "AZAS_LIVE_HORIZONS_TEST", matches = "true")
 class HorizonsLiveTests {
     @Test void fetchesAndValidatesFreshSunAndEarthResponsesForSite01() throws Exception {
-        var site = LandingScreenDatasetV1.load().sites().stream().filter(value -> value.code().equals("Site01"))
-                .findFirst().orElseThrow();
-        var input = new AnalysisEngine.Input(site.code(), site.latitude(), site.longitude(), site.elevation(), site.observerHeight(),
+        var input = new AnalysisEngine.Input("Site01", -89.6307206, -129.9644390, 863.783, 1,
                 "MOON_ME_DE421_PLANETOCENTRIC_EAST", 1737400, false, "a".repeat(64),
-                java.util.Arrays.stream(site.samples()).map(sample -> sample[1]).toList(),
+                HorizonFixture.site01(),
                 Instant.parse("2026-12-01T00:00:00Z"), Instant.parse("2026-12-01T01:00:00Z"), 3600);
         var client = new HorizonsClient();
 
