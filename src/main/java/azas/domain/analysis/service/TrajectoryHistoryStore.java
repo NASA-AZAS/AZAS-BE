@@ -30,7 +30,7 @@ public class TrajectoryHistoryStore {
             throw new BusinessException(AnalysisErrorCode.RUN_NOT_FOUND);
         return jdbc.query("select * from trajectory_run where analysis_run_id = ? order by created_at desc, trajectory_run_id desc limit 100",
                 (rs, row) -> new LaunchTrajectoryResponse.Summary(rs.getObject("trajectory_run_id", UUID.class), rs.getString("candidate_code"),
-                        rs.getString("execution_status"), rs.getString("status"), instant(rs, "created_at"), instant(rs, "finished_at"), rs.getString("reason")), runId);
+                        rs.getString("execution_status"), rs.getString("status"), instant(rs, "created_at"), instant(rs, "started_at"), instant(rs, "finished_at"), rs.getString("reason")), runId);
     }
 
     @Transactional
@@ -41,10 +41,18 @@ public class TrajectoryHistoryStore {
         jdbc.update("""
                 insert into trajectory_run (trajectory_run_id, analysis_run_id, launch_site_id, candidate_code,
                     execution_status, created_at, expires_at, engine_sha256, input_snapshot)
-                values (?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?::jsonb)
+                values (?, ?, ?, ?, 'PENDING', ?, ?, ?, ?::jsonb)
                 """, id, options.analysisRunId(), site.launchSiteId(), candidate.candidateId(), time(now), time(expires),
                 LunarTrajectoryCalculator.fingerprint(), JSON.writeValueAsString(input));
         return new Prepared(id, expires, input);
+    }
+
+    @Transactional
+    public boolean start(Prepared prepared) {
+        return jdbc.update("""
+                update trajectory_run set execution_status = 'RUNNING', started_at = clock_timestamp()
+                where trajectory_run_id = ? and execution_status = 'PENDING' and expires_at > clock_timestamp()
+                """, prepared.id()) == 1;
     }
 
     @Transactional
@@ -81,7 +89,7 @@ public class TrajectoryHistoryStore {
     public void fail(UUID id, String reason) {
         jdbc.update("""
                 update trajectory_run set execution_status = 'FAILED', status = 'FAILED', reason = ?, finished_at = clock_timestamp()
-                where trajectory_run_id = ? and execution_status = 'RUNNING'
+                where trajectory_run_id = ? and execution_status in ('PENDING', 'RUNNING')
                 """, reason, id);
     }
 
@@ -89,7 +97,7 @@ public class TrajectoryHistoryStore {
     public void expire() {
         jdbc.update("""
                 update trajectory_run set execution_status = 'FAILED', status = 'FAILED', reason = 'ANALYSIS_TIMEOUT',
-                    finished_at = clock_timestamp() where execution_status = 'RUNNING' and expires_at <= clock_timestamp()
+                    finished_at = clock_timestamp() where execution_status in ('PENDING', 'RUNNING') and expires_at <= clock_timestamp()
                 """);
     }
 
@@ -112,6 +120,7 @@ public class TrajectoryHistoryStore {
                     .tliDeltaVKmS((Double) rs.getObject("tli_delta_v_km_s")).samples(samples)
                     .sourceRecords(List.of(JSON.readValue(rs.getString("source_records"), AnalysisEngine.Source[].class)))
                     .trajectoryRunId(trajectoryId).executionStatus(rs.getString("execution_status")).createdAt(instant(rs, "created_at"))
+                    .startedAt(instant(rs, "started_at"))
                     .finishedAt(instant(rs, "finished_at")).engineSha256(rs.getString("engine_sha256")).build();
         }, trajectoryId, analysisId);
         if (rows.isEmpty()) throw new BusinessException(AnalysisErrorCode.TRAJECTORY_NOT_FOUND);

@@ -279,6 +279,7 @@ Table trajectory_run {
   candidate_code text [not null]
   execution_status text [not null]
   created_at timestamptz [not null]
+  started_at timestamptz
   finished_at timestamptz
   expires_at timestamptz [not null]
   engine_sha256 char(64) [not null]

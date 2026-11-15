@@ -224,6 +224,8 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
         String trajectoryId = first.path("trajectoryRunId").asString();
         assertThat(second.path("trajectoryRunId").asString()).isNotEqualTo(trajectoryId);
         assertThat(first.path("executionStatus").asString()).isEqualTo("SUCCEEDED");
+        assertThat(first.path("startedAt").isString()).isTrue();
+        assertThat(first.path("finishedAt").isString()).isTrue();
         assertThat(first.path("engineSha256").asString()).matches("[a-f0-9]{64}");
         assertThat(jdbc.queryForObject("select count(*) from trajectory_sample where trajectory_run_id = ?", Integer.class, UUID.fromString(trajectoryId))).isEqualTo(701);
         var stored = json.readTree(mvc.perform(get("/api/v1/analyses/{run}/trajectories/{trajectory}", id, trajectoryId))

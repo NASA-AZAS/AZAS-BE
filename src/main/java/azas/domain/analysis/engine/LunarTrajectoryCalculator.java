@@ -45,7 +45,7 @@ public class LunarTrajectoryCalculator {
                 throw new AnalysisEngineException("HORIZONS_INVALID_RESPONSE", null);
             }
             double[] target = LunarTransferOrbit.scale(moonFromEarth, 1 - MOON_OFFSET_KM / distance);
-            State parking = LunarTransferOrbit.propagate(parkingAtLaunch(site, candidate), options.assumptions().launchToTliSeconds());
+            State parking = LunarTransferOrbit.propagate(parkingAtLaunch(site, candidate, options.assumptions()), options.assumptions().launchToTliSeconds());
             long transfer = Duration.between(candidate.tliUtc(), candidate.lunarArrivalUtc()).toSeconds();
             var solution = LunarTransferOrbit.solve(parking.position(), target, transfer);
             response.lambertStatus(solution.status()).positionResidualKm(solution.residualKm());
@@ -64,17 +64,17 @@ public class LunarTrajectoryCalculator {
         return response.sourceRecords(List.copyOf(sources)).build();
     }
 
-    private static State parkingAtLaunch(Site site, Candidate candidate) {
+    private static State parkingAtLaunch(Site site, Candidate candidate, LaunchOptionsResponse.Assumptions assumptions) {
         double latitude = Math.toRadians(site.latitudeDeg());
         double longitude = Math.toRadians((LaunchOptionCalculator.rotation(candidate.launchUtc()) + site.longitudeDegEast()) % 360);
-        double inclination = Math.toRadians(LaunchOptionCalculator.ASSUMPTIONS.inclinationDeg());
+        double inclination = Math.toRadians(assumptions.inclinationDeg());
         double sin = Math.sin(inclination);
         double cos = Math.cos(inclination);
         double alongPlane = Math.cos(latitude) * Math.sin(longitude) * cos + Math.sin(latitude) * sin;
         double angle = Math.atan2(alongPlane, Math.cos(latitude) * Math.cos(longitude));
         double[] radial = {Math.cos(angle), Math.sin(angle) * cos, Math.sin(angle) * sin};
         double[] tangent = {-Math.sin(angle), Math.cos(angle) * cos, Math.cos(angle) * sin};
-        double radius = EARTH_RADIUS_KM + LaunchOptionCalculator.ASSUMPTIONS.parkingAltitudeKm();
+        double radius = EARTH_RADIUS_KM + assumptions.parkingAltitudeKm();
         return new State(LunarTransferOrbit.scale(radial, radius),
                 LunarTransferOrbit.scale(tangent, Math.sqrt(LunarTransferOrbit.EARTH_MU / radius)));
     }

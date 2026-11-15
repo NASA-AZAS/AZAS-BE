@@ -56,8 +56,9 @@ CREATE TABLE trajectory_run (
     analysis_run_id uuid NOT NULL REFERENCES analysis_run(analysis_run_id),
     launch_site_id bigint NOT NULL,
     candidate_code text NOT NULL,
-    execution_status text NOT NULL CHECK (execution_status IN ('RUNNING', 'SUCCEEDED', 'FAILED')),
+    execution_status text NOT NULL CHECK (execution_status IN ('PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED')),
     created_at timestamptz NOT NULL,
+    started_at timestamptz,
     finished_at timestamptz,
     expires_at timestamptz NOT NULL,
     engine_sha256 char(64) NOT NULL,
@@ -77,7 +78,7 @@ CREATE TABLE trajectory_run (
     FOREIGN KEY (analysis_run_id, candidate_code) REFERENCES launch_option_result(analysis_run_id, candidate_code)
 );
 CREATE INDEX trajectory_run_analysis_created_idx ON trajectory_run(analysis_run_id, created_at);
-CREATE INDEX trajectory_run_expiry_idx ON trajectory_run(expires_at) WHERE execution_status = 'RUNNING';
+CREATE INDEX trajectory_run_expiry_idx ON trajectory_run(expires_at) WHERE execution_status IN ('PENDING', 'RUNNING');
 CREATE TABLE trajectory_sample (
     trajectory_run_id uuid NOT NULL REFERENCES trajectory_run(trajectory_run_id),
     sample_index integer NOT NULL CHECK (sample_index >= 0),

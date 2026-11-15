@@ -95,6 +95,8 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
         TerrainTestData.copyInto(POSTGRES, database);
         String beforeRun, beforeWindow, beforeChecksums;
         try (Connection connection = connect(database); var statement = connection.createStatement()) {
+            statement.executeUpdate("insert into observer_sample values (1, '2027-01-01T00:00Z', 10, 20, 30, 40)");
+            statement.executeUpdate("insert into launch_site values (1, 'Kennedy', 28.61, -80.60)");
             statement.executeUpdate("""
                     insert into analysis_run (analysis_run_id, landing_site_id, analysis_type, execution_status,
                         analysis_start_at, analysis_end_at, sample_interval_minutes, mission_due_date, mission_deadline_at,
@@ -127,6 +129,8 @@ class TerrainSchemaMigrationTests extends PostgresIntegrationTest {
                     .isEqualTo(beforeChecksums);
             assertThat(count(connection, "landing_site")).isEqualTo(27);
             assertThat(count(connection, "horizon_sample")).isEqualTo(97200);
+            assertThat(count(connection, "observer_sample")).isOne();
+            assertThat(count(connection, "launch_site")).isOne();
             for (String table : new String[]{"surface_candidate_result", "launch_option_batch", "launch_option_result", "trajectory_run", "trajectory_sample"})
                 assertThat(count(connection, table)).isZero();
         }

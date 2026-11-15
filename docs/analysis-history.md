@@ -86,7 +86,8 @@ V6 이전 실행은 당시 발사 후보·궤적이 저장되지 않았습니다
 이후 같은 실행의 발사 후보는 재계산하지 않습니다. 과거 궤적은 임의 생성하지 않습니다.
 발사 후보 응답의 `calculatedAt`, `engineSha256`으로 실제 계산 시점과 구현을 확인할 수 있습니다.
 
-기존 궤적 POST는 동기 HTTP 200을 유지합니다. 응답에 `trajectoryRunId`, `executionStatus`, `createdAt`, `finishedAt`, `engineSha256`이 추가됩니다.
+기존 궤적 POST는 동기 HTTP 200을 유지합니다. 응답에 `trajectoryRunId`, `executionStatus`, `createdAt`, `startedAt`, `finishedAt`, `engineSha256`이 추가됩니다.
+대기 중 PENDING, 실제 작업 시작 후 RUNNING이며 접수·실행 시작·종료 시각을 구분합니다.
 
 ```text
 POST /api/v1/analyses/{runId}/launch-options/{candidateId}/trajectory

@@ -37,7 +37,8 @@ public class LaunchTrajectoryService {
                             LOG.atInfo().addKeyValue("analysisRunId", runId).addKeyValue("trajectoryRunId", work.id())
                                     .addKeyValue("candidateId", candidateId).log("Trajectory accepted");
                             return new AnalysisJobs.Work<>(work.expiresAt(), () -> {
-                                history.complete(work, calculator.calculate(options, site, candidate));
+                                if (history.start(work)) history.complete(work, calculator.calculate(options, site, candidate));
+                                else history.fail(work.id(), "ANALYSIS_TIMEOUT");
                                 return true;
                             }, reason -> history.fail(work.id(), reason));
                         });
