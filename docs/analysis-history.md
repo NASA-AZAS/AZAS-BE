@@ -78,6 +78,8 @@ PK를 URL에서 받으므로 원본 CLI의 `candidateSiteIds`, `siteDeadlinesUtc
 | `trajectory_run` | 궤적 POST마다 새 UUID, 선택한 입력 사본·엔진 해시·상태·잔차·delta-v·출처 |
 | `trajectory_sample` | 궤적 실행별 순번·UTC·경과 초·위치 XYZ·속도 XYZ 컬럼 |
 
+신규 분석에서 표면 조건을 만족한 구간은 `landing_opportunity_result.decision_reasons`에 `SURFACE_CRITERIA_SATISFIED`를 저장합니다. API에서 이 구간의 판정은 `windows[].surfaceStatus`로 확인합니다. 개별 접지 후보의 `candidates[].reasons`는 별도 판정이며 전이 입력을 생략하면 `TRANSFER_INPUTS_MISSING`을 반환합니다. #34 적용 전에 저장된 구간의 사유는 소급 변경하지 않습니다.
+
 신규 분석은 완료 트랜잭션에서 발사 후보까지 저장합니다. 이후 카탈로그 좌표가 바뀌어도 같은 실행의 후보는 같습니다.
 발사장 카탈로그가 비어 있으면 표면 분석은 성공하고 발사 배치는 `DATA_UNAVAILABLE`로 남습니다. 데이터를 넣은 뒤 새 분석을 요청하세요.
 
@@ -95,7 +97,7 @@ GET  /api/v1/analyses/{runId}/trajectories
 GET  /api/v1/analyses/{runId}/trajectories/{trajectoryId}
 ```
 
-목록은 최신 100건입니다. 상세 GET은 저장한 결과·표본만 읽으며 Horizons를 호출하지 않습니다.
+목록은 최신 100건입니다. 상세 GET은 저장한 결과·표본만 읽으며 Horizons를 호출하지 않습니다. 상태별 응답과 호출 예시는 [궤적 조회 명세](analysis-api.md#발사-후보에서-저장된-궤적까지-조회하기)를 참고하세요.
 재계산은 POST로 새 실행을 만듭니다. 네트워크 실패도 실행에 남으며 표본은 빈 배열입니다.
 실행 상태 SUCCEEDED는 계산 절차의 완료를 뜻합니다. 실제 판단은 `status`, `lambertStatus`, 검증 플래그를 함께 보세요.
 

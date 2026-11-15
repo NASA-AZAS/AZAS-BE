@@ -72,7 +72,7 @@ POST는 HTTP 202와 상태 조회용 `Location` 헤더를 반환합니다.
 | --- | --- |
 | `POST /api/v1/landing-sites/{id}/date-opportunities` | 후보지 DB PK로 비동기 분석 접수. 202와 실행 ID 반환 |
 | `GET /api/v1/analyses/{runId}` | 실행 상태, 결과 상태, 평가 기간, 실패 사유 조회 |
-| `GET /api/v1/analyses/{runId}/date-opportunities` | 첫 접지 시각, 전체 접지 구간, 시간순 개별 후보 최대 50개 |
+| `GET /api/v1/analyses/{runId}/date-opportunities` | 첫 접지 시각, 전체 접지 구간, 평가한 개별 후보(기본 상한 50개) |
 | `GET /api/v1/analyses/{runId}/daily-results` | 일별 태양·지구·공동 가시율 및 가시 구간. `?date=2027-01-19` 지원 |
 
 ```json
@@ -84,9 +84,17 @@ POST는 HTTP 202와 상태 조회용 `Location` 헤더를 반환합니다.
 
 탐색 시작은 `2027-01-01T00:00:00Z`입니다. 마감일은 2027~2029년의 날짜(해당 날짜 23:59 UTC) 또는 초 단위 ISO 시각입니다. 활동 시간의 기본값은 48시간이고 양의 정수 분으로 환산 가능해야 합니다. 분석은 `observer_sample`을 후보지 PK와 기간으로 조회합니다. 요청 기간에 10분 격자 표본이 빠져 있으면 `FAILED / OBSERVER_DATA_INCOMPLETE`를 기록합니다.
 
-태양과 지구의 고도가 각각 해당 방위각의 지역 지평선보다 높을 때 공동 가시로 판정합니다. 접지 구간의 시작과 끝은 모두 포함되며 끝은 마지막 공동 가시 표본 시각에서 활동 시간을 뺀 값입니다. 일별 가시율은 다음 격자까지 직전 표본을 적용해 UTC 날짜별로 집계합니다. 마지막 날짜는 마감 시각까지만 집계합니다.
+기본 표면 조건은 태양과 지구가 모두 보이는 것입니다. 각 천체의 고도가 그 방위각의 지역 지평선보다 높으면 `VISIBLE`입니다. 다른 조건은 [요청 옵션](analysis-history.md#요청-옵션)에서 선택할 수 있습니다. 일별 가시율은 선택한 조건과 관계없이 실제 가시성을 UTC 날짜별로 집계합니다. 마지막 날짜는 마감 시각까지만 집계합니다.
 
-`windows[]`에는 `UNKNOWN`을 포함한 모든 구간과 각각의 `surfaceStatus`가 들어갑니다. `startUtc`와 `endUtc`는 구간의 양 끝이고, `supportEndUtc`는 활동을 지지하는 마지막 표본 시각입니다. `earliestTouchdownUtc`와 `candidates`는 `SATISFIED` 구간에서만 산출합니다. 만족 구간이 없으면 최초 접지 시각은 null이고 후보 배열은 비어 있습니다. 개별 후보가 50개를 넘으면 `TRUNCATED`로 기록하며 전체 구간과 일별 결과는 조회할 수 있습니다. 후보의 `proposedLandingUtc`는 표면 조건으로 계산한 접지 시각입니다.
+| 결과 필드 | 해석 |
+| --- | --- |
+| `windows[]` | 저장된 전체 접지 구간과 각각의 `surfaceStatus`. 접지 시각은 `startUtc`부터 `endUtc`까지 양 끝을 포함합니다. `endUtc`는 조건을 지지하는 마지막 관측 시각(`supportEndUtc`)에서 활동 시간을 뺀 값입니다. |
+| `earliestTouchdownUtc` | `SATISFIED`인 첫 구간의 시작. 만족 구간이 없으면 `null`입니다. |
+| `candidates[]` | 만족 구간에서 접지 시각과 입력한 전이 조건 조합을 개별 평가한 결과. `proposedLandingUtc`가 접지 시각이며 `reasons`는 해당 후보의 판정 사유입니다. |
+
+`maxCandidates`는 기본 50개이며 1~10,000개로 지정할 수 있습니다. 다음 후보 평가가 이 상한을 넘으면 실행 상태 조회의 `overallResultStatus`가 `TRUNCATED`입니다. 이때도 전체 접지 구간과 일별 결과를 조회할 수 있습니다. 진행 중이거나 실패한 실행은 최초 접지 시각이 `null`이고 두 배열이 비므로, 빈 응답을 해석할 때는 먼저 `GET /api/v1/analyses/{runId}`의 `executionStatus`를 확인하세요.
+
+예를 들어 전이 입력 없이 표면 조건을 만족하면, 같은 응답에서 구간은 `windows[].surfaceStatus = SATISFIED`이고 개별 후보는 `status = ENVIRONMENT_ONLY`, `lambertStatus = NOT_EVALUATED`, `reasons = ["TRANSFER_INPUTS_MISSING"]`입니다. 화면에서는 접지 가능 구간을 표시하고 전이 계산 여부는 해당 후보에 표시하면 됩니다.
 
 동일 요청이라도 실행마다 엔진 해시, 지형 데이터셋 해시, 사용한 관측 표본 수와 표본 해시를 보관합니다. 실제 원본과 비교하려면 테스트 프로세스에 `LLSN_VER2_HOME`으로 원본 모듈 디렉터리를 지정합니다. `AnalysisApiTests`가 일회용 PostgreSQL의 Site01 관측값으로 2027년 1월 접지 구간·후보 시각·31일의 태양/지구 가시율을 오프라인 CLI 결과와 비교합니다.
 
@@ -195,6 +203,38 @@ $env:JAVA_TOOL_OPTIONS = "$env:JAVA_TOOL_OPTIONS -Djavax.net.ssl.trustStoreType=
 
 Kennedy 예제 `Kennedy-1799883120`은 `2027-01-14T01:32:00Z`부터 `2027-01-18T22:10:00Z`까지 701개 표본을 반환합니다. 표면 접지는 `2027-01-19T04:10:00Z`이며, 표본 구간은 달 도착에서 끝납니다.
 
+아래는 이 예제의 첫 표본(`data.samples[0]`)입니다. 위치와 속도는 소수 여섯 자리로 반올림했습니다.
+
+```json
+{
+  "utc": "2027-01-14T01:32:00Z",
+  "elapsedSeconds": 0,
+  "positionKm": [-6047.927763, 1759.075112, 2219.400439],
+  "velocityKmS": [-3.974492, 8.157424, 5.904744]
+}
+```
+
+## 발사 후보에서 저장된 궤적까지 조회하기
+
+| 순서 | 호출 | 다음 호출에 쓸 값 |
+| --- | --- | --- |
+| 1 | `POST /api/v1/landing-sites/{id}/date-opportunities` | HTTP 202 응답의 `data.analysisRunId`가 이후 경로의 `{runId}`입니다. `Location`을 조회해 `SUCCEEDED`를 확인합니다. |
+| 2 | `GET /api/v1/analyses/{runId}/launch-options` | 발사장을 선택하고 `data.launchSites[].candidates[].candidateId`를 복사합니다. 예: `Kennedy-1799883120`. 접지 후보 목록에도 이름이 같은 필드가 있으므로 발사장 목록에서 값을 가져오세요. |
+| 3 | `POST /api/v1/analyses/{runId}/launch-options/{candidateId}/trajectory` | 본문 없이 호출합니다. 계산을 마치면 응답의 `data.trajectoryRunId`로 이번 계산을 다시 열 수 있습니다. 같은 후보로 다시 POST하면 새 실행이 생깁니다. |
+| 4 | `GET /api/v1/analyses/{runId}/trajectories/{trajectoryId}` | 3단계의 `trajectoryRunId`를 `{trajectoryId}`에 넣습니다. 저장된 결과를 읽으므로 Horizons를 호출하지 않습니다. |
+
+궤적 ID를 모르면 `GET /api/v1/analyses/{runId}/trajectories`로 최근 100건을 조회합니다. `data`는 접수 시각(`createdAt`) 내림차순 요약 배열입니다. 각 항목의 `candidateId`, `trajectoryRunId`, 상태, 시각, 사유로 실행을 고른 뒤 상세를 조회하세요.
+
+**궤적 상세 응답을 읽는 법**
+
+| `data.executionStatus` | `data.status` | `data.samples` | 화면 처리 |
+| --- | --- | --- | --- |
+| `PENDING` / `RUNNING` | `null` | `[]` | 대기 / 계산 중을 표시하고 같은 상세 GET을 다시 조회합니다. |
+| `SUCCEEDED` | `PRELIMINARY` | TLI부터 달 도착까지의 UTC 표본 | `positionKm`(XYZ, km)로 예비 궤적을 그립니다. 속도는 `velocityKmS`(XYZ, km/s)입니다. |
+| `SUCCEEDED` | `NO_PRELIMINARY_SOLUTION` | `[]` | 지원하는 모델에서 해를 찾지 못했습니다. `lambertStatus`와 `reason`을 확인합니다. |
+| `FAILED` | `FAILED` | `[]` | `reason`을 확인합니다. 예를 들어 `HORIZONS_UNAVAILABLE`이면 궤적 계산 중 외부 벡터를 얻지 못한 경우입니다. |
+
+실패한 기록도 상세 조회에 성공하면 HTTP 200입니다. HTTP 404 `TRAJECTORY_NOT_FOUND`는 지정한 분석 ID와 궤적 ID의 조합으로 조회되는 기록이 없다는 뜻입니다. 기존 분석의 이력 목록이 비면 HTTP 200과 `data: []`를 받고, 분석 ID 자체가 없으면 목록은 HTTP 404 `ANALYSIS_NOT_FOUND`를 반환합니다.
 
 ## 원본 옵션 및 저장된 실행 기록
 

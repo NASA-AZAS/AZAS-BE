@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 
 import org.junit.jupiter.api.Test;
 import azas.support.PostgresIntegrationTest;
@@ -64,6 +65,25 @@ class AzasApplicationTests extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.info.title").value("Test AZAS API"))
                 .andExpect(jsonPath("$.paths['/health']").exists());
+    }
+
+    @Test
+    void analysisOpenApiPublishesRequestExamplesAndTrajectoryStates() throws Exception {
+        String post = "$.paths['/api/v1/landing-sites/{id}/date-opportunities'].post";
+        String examples = post + ".requestBody.content['application/json'].examples";
+        String detail = "$.paths['/api/v1/analyses/{runId}/trajectories/{trajectoryId}'].get";
+        mvc.perform(get("/openapi.json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(post + ".requestBody.required").value(true))
+                .andExpect(jsonPath(examples + "['기본 조건'].value.missionDeadlineUtc").value("2027-01-31"))
+                .andExpect(jsonPath(examples + "['지구가 차폐된 구간에서 1시간 활동'].value.surfaceCriteria.earth")
+                        .value("OCCULTED"))
+                .andExpect(jsonPath(post + ".responses['202'].content.*.schema").isNotEmpty())
+                .andExpect(jsonPath(detail + ".responses['200'].content.*.schema").isNotEmpty())
+                .andExpect(jsonPath(detail + ".responses['404'].content['application/json'].examples['궤적 기록 없음'].value.code")
+                        .value("TRAJECTORY_NOT_FOUND"))
+                .andExpect(jsonPath("$.components.schemas.LaunchTrajectoryResponse.properties.executionStatus.enum")
+                        .value(containsInAnyOrder("PENDING", "RUNNING", "SUCCEEDED", "FAILED")));
     }
 
     @Test
