@@ -2,13 +2,17 @@ package azas.domain.analysis.engine;
 
 import java.util.Arrays;
 
-/** Earth-only two-body propagation and the short-way, zero-revolution Lambert branch from LLSN ver2. */
+/** Earth-only two-body propagation and the short/long zero-revolution Lambert branches from LLSN ver2. */
 final class LunarTransferOrbit {
     static final double EARTH_MU = 398600.4418; // km^3/s^2
     private static final double RESIDUAL_LIMIT_KM = 0.01;
 
     record State(double[] position, double[] velocity) {}
-    record Solution(String status, String reason, double[] departureVelocity, Double residualKm) {}
+    record Solution(String status, String reason, double[] departureVelocity, Double residualKm, double[] arrivalVelocity) {
+        Solution(String status, String reason, double[] departureVelocity, Double residualKm) {
+            this(status, reason, departureVelocity, residualKm, null);
+        }
+    }
 
     private LunarTransferOrbit() {}
 
@@ -47,14 +51,20 @@ final class LunarTransferOrbit {
     private static final double[] WEIGHTS = {0, 0, 0, 0, 0, 34.0/105, 9.0/35, 9.0/35, 9.0/280, 9.0/280, 0, 41.0/840, 41.0/840};
 
     static State propagate(State initial, long elapsedSeconds) {
+        return propagate(initial, elapsedSeconds, EARTH_MU);
+    }
+
+    static State propagate(State initial, long elapsedSeconds, double mu) {
+        double direction = elapsedSeconds < 0 ? -1 : 1;
         double[] state = Arrays.copyOf(initial.position(), 6);
         System.arraycopy(initial.velocity(), 0, state, 3, 3);
-        double remaining = elapsedSeconds;
+        double remaining = Math.abs((double) elapsedSeconds);
         double step = Math.min(0.001, remaining);
         double[][] derivatives = new double[STAGES.length][6];
         double[] stage = new double[6];
         double[] next = new double[6];
         for (int iteration = 0; remaining > 0; iteration++) {
+            if (Thread.currentThread().isInterrupted()) throw new AnalysisEngineException("ANALYSIS_INTERRUPTED", null);
             if (iteration >= 2_000_000) {
                 throw new ArithmeticException("PROPAGATION_STEP_LIMIT");
             }
@@ -62,13 +72,13 @@ final class LunarTransferOrbit {
             for (int i = 0; i < STAGES.length; i++) {
                 System.arraycopy(state, 0, stage, 0, 6);
                 for (int j = 0; j < i; j++) {
-                    double factor = step * STAGES[i][j];
+                    double factor = direction * step * STAGES[i][j];
                     for (int m = 0; m < 6; m++) {
                         stage[m] += factor * derivatives[j][m];
                     }
                 }
                 double radius = norm(stage);
-                double gravity = -EARTH_MU / (radius * radius * radius);
+                double gravity = -mu / (radius * radius * radius);
                 for (int axis = 0; axis < 3; axis++) {
                     derivatives[i][axis] = stage[axis + 3];
                     derivatives[i][axis + 3] = gravity * stage[axis];
@@ -78,7 +88,7 @@ final class LunarTransferOrbit {
             for (int m = 0; m < 6; m++) {
                 next[m] = state[m];
                 for (int i = 0; i < WEIGHTS.length; i++) {
-                    next[m] += (step * WEIGHTS[i]) * derivatives[i][m];
+                    next[m] += (direction * step * WEIGHTS[i]) * derivatives[i][m];
                 }
                 double estimate = (step * (41.0 / 840)) *
                         (derivatives[0][m] + derivatives[10][m] - derivatives[11][m] - derivatives[12][m]);
@@ -132,6 +142,7 @@ final class LunarTransferOrbit {
         double left = grid(0);
         double previous = geometry.residual(left);
         for (int i = 1; i < 1200; i++) {
+            if (Thread.currentThread().isInterrupted()) throw new AnalysisEngineException("ANALYSIS_INTERRUPTED", null);
             double right = grid(i);
             double current = geometry.residual(right);
             if (Double.isFinite(previous) && Double.isFinite(current) && previous * current <= 0) {
@@ -154,25 +165,29 @@ final class LunarTransferOrbit {
     }
 
     static Solution solve(double[] departure, double[] target, long transferSeconds) {
+        return solve(departure, target, transferSeconds, EARTH_MU, false, RESIDUAL_LIMIT_KM);
+    }
+
+    static Solution solve(double[] departure, double[] target, long transferSeconds, double mu, boolean longWay, double tolerance) {
         double startRadius = norm(departure);
         double endRadius = norm(target);
         double cosine = Math.clamp(dot(departure, target) / (startRadius * endRadius), -1, 1);
         if (!Double.isFinite(cosine) || 1 - Math.abs(cosine) <= 1e-12) {
             return new Solution("NO_SOLUTION_IN_SUPPORTED_DOMAIN", "UNSUPPORTED_GEOMETRY", null, null);
         }
-        double chordFactor = Math.sqrt(startRadius * endRadius * (1 + cosine));
-        var geometry = new Geometry(startRadius, endRadius, chordFactor, Math.sqrt(EARTH_MU) * transferSeconds);
+        double chordFactor = (longWay ? -1 : 1) * Math.sqrt(startRadius * endRadius * (1 + cosine));
+        var geometry = new Geometry(startRadius, endRadius, chordFactor, Math.sqrt(mu) * transferSeconds);
         double z = findRoot(geometry);
         if (!Double.isFinite(z)) {
             return new Solution("NO_SOLUTION_IN_SUPPORTED_DOMAIN", "NO_ZERO_REVOLUTION_SOLUTION", null, null);
         }
         double y = geometry.y(z, stumpff(z));
         double f = 1 - y / startRadius;
-        double g = chordFactor * Math.sqrt(y / EARTH_MU);
+        double g = chordFactor * Math.sqrt(y / mu);
         double[] velocity = scale(combine(target, -f, departure), 1/g);
         State endpoint;
         try {
-            endpoint = propagate(new State(departure, velocity), transferSeconds);
+            endpoint = propagate(new State(departure, velocity), transferSeconds, mu);
         } catch (ArithmeticException ex) {
             return new Solution("NO_SOLUTION_IN_SUPPORTED_DOMAIN", "PROPAGATION_FAILED", null, null);
         }
@@ -180,9 +195,10 @@ final class LunarTransferOrbit {
         if (!Double.isFinite(residualKm)) {
             return new Solution("NO_SOLUTION_IN_SUPPORTED_DOMAIN", "PROPAGATION_FAILED", null, null);
         }
-        if (residualKm > RESIDUAL_LIMIT_KM) {
-            return new Solution("RESIDUAL_TOO_LARGE", "POSITION_RESIDUAL_TOO_LARGE", null, residualKm);
+        if (residualKm > tolerance) {
+            return new Solution("RESIDUAL_TOO_LARGE", "POSITION_RESIDUAL_TOO_LARGE", velocity, residualKm,
+                    scale(combine(scale(target, 1 - y / endRadius), -1, departure), 1/g));
         }
-        return new Solution("CONVERGED", null, velocity, residualKm);
+        return new Solution("CONVERGED", null, velocity, residualKm, scale(combine(scale(target, 1 - y / endRadius), -1, departure), 1/g));
     }
 }

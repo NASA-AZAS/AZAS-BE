@@ -46,7 +46,9 @@ public class HorizonsClient {
     HorizonsClient(HttpClient client, URI endpoint) { this.client = client; this.endpoint = endpoint; }
 
     public record Angle(double azimuth, double elevation) {}
-    public record Position(double[] km, AnalysisEngine.Source source) {}
+    public record Position(double[] km, double[] velocityKmS, AnalysisEngine.Source source) {
+        public Position(double[] km, AnalysisEngine.Source source) { this(km, new double[3], source); }
+    }
     public record Series(List<Angle> angles, AnalysisEngine.Source source) {
         public Series { angles = List.copyOf(angles); }
     }
@@ -108,13 +110,13 @@ public class HorizonsClient {
             double expectedJulianDate = 2440587.5 + epoch.getEpochSecond() / 86400.0;
             require(observed.equals(epoch) && Math.abs(Double.parseDouble(fields[0]) - expectedJulianDate) < 1e-8,
                     "Unexpected Horizons vector epoch");
-            double[] position = new double[3];
+            double[] position = new double[3], velocity = new double[3];
             for (int i = 0; i < 6; i++) {
                 double value = Double.parseDouble(fields[i + 2]);
                 require(Double.isFinite(value), "Invalid vector value");
-                if (i < 3) position[i] = value;
+                if (i < 3) position[i] = value; else velocity[i - 3] = value;
             }
-            return new Position(position, source);
+            return new Position(position, velocity, source);
         });
     }
 

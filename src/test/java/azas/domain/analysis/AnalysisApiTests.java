@@ -203,12 +203,27 @@ class AnalysisApiTests extends PostgresIntegrationTest {
         }
     }
 
-    @Test
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"VISIBLE", "ANY", "OCCULTED"})
     @EnabledIfEnvironmentVariable(named = "LLSN_VER2_HOME", matches = ".+")
-    void surfaceSearchMatchesTheOriginalCliForSite01(@TempDir Path scratch) throws Exception {
+    void surfaceSearchMatchesTheOriginalCliForSite01(String criterion, @TempDir Path scratch) throws Exception {
         Path module = Path.of(System.getenv("LLSN_VER2_HOME")).toAbsolutePath();
+        var apiRequest = new java.util.LinkedHashMap<String, Object>();
+        apiRequest.put("missionDeadlineUtc", "2027-01-31");
+        apiRequest.put("surfaceDurationHours", 48);
+        apiRequest.put("surfaceCriteria", java.util.Map.of("sun", criterion, "earth", criterion, "unknownPolicy", "RECORD_UNKNOWN"));
+        apiRequest.put("timeStepMinutes", criterion.equals("VISIBLE") ? 10 : 60);
+        apiRequest.put("maxCandidates", criterion.equals("VISIBLE") ? 50 : 7);
+        apiRequest.put("refinementPolicy", java.util.Map.of("minStepMinutes", 10, "maxDepth", 2));
+        var cliRequest = new java.util.LinkedHashMap<>(apiRequest);
+        cliRequest.put("schemaVersion", "1.0");
+        cliRequest.put("requestId", "parity");
+        cliRequest.put("candidateSiteIds", java.util.List.of("Site01"));
+        cliRequest.put("networkMode", "CACHE_ONLY");
+        Path inputFile = scratch.resolve("request.json");
+        Files.writeString(inputFile, json.writeValueAsString(cliRequest));
         var process = new ProcessBuilder("java", "-jar", module.resolve("llsn.jar").toString(), "date-opportunities",
-                "--offline", "--site", "Site01", "--hours", "48", "--deadline", "2027-01-31", "--output", scratch.toString())
+                inputFile.toString(), scratch.toString(), "--offline", "--deadline", "2027-01-31")
                 .redirectErrorStream(true).redirectOutput(scratch.resolve("cli.log").toFile()).start();
         try {
             assertThat(process.waitFor(90, java.util.concurrent.TimeUnit.SECONDS)).as("offline CLI completed").isTrue();
@@ -230,7 +245,7 @@ class AnalysisApiTests extends PostgresIntegrationTest {
                         statement.setString(2, fields[0]);
                         for (int i = 1; i <= 4; i++) statement.setDouble(i + 2, Double.parseDouble(fields[i]));
                     });
-            UUID id = submitSurface(site, "2027-01-31", "48");
+            UUID id = submitSurfaceBody(site, json.writeValueAsString(apiRequest));
             assertThat(await(id).path("overallResultStatus")).isEqualTo(original.path("status"));
             var actual = surfaceReport(id);
             assertThat(actual.path("earliestTouchdownUtc")).isEqualTo(expected.path("earliestTouchdownUtc"));
@@ -255,15 +270,76 @@ class AnalysisApiTests extends PostgresIntegrationTest {
                             .isEqualTo(reference.path(body).path("visibleFraction").asDouble());
                 }
             }
+            assertThat(jdbc.queryForObject("select count(*) from surface_candidate_result where analysis_run_id = ?", Integer.class, id))
+                    .isEqualTo(original.path("candidates").size());
             verifyNoInteractions(horizons);
         } finally {
             jdbc.update("delete from observer_sample where landing_site_id = ?", site);
         }
     }
 
+    @Test void rejectsUnknownAndInvalidOriginalOptionsInsteadOfSilentlyIgnoringThem() throws Exception {
+        long count = jdbc.queryForObject("select count(*) from analysis_run", Long.class);
+        for (String options : java.util.List.of(
+                "\"typoOption\":1", "\"timeStepMinutes\":0", "\"maxCandidates\":10001",
+                "\"surfaceCriteria\":{\"sun\":\"ANY\",\"earth\":\"VISIBLE\",\"unknownPolicy\":\"RECORD_UNKNOWN\",\"typo\":1}",
+                "\"departureState\":{\"frame\":\"ICRF\"}", "\"networkMode\":\"INVALID\"",
+                "\"refinementPolicy\":{\"minStepMinutes\":11,\"maxDepth\":2}",
+                "\"launchToTliDelayHours\":{\"min\":2,\"max\":2,\"step\":1}")) {
+            mvc.perform(post("/api/v1/landing-sites/" + siteId() + "/date-opportunities").contentType("application/json")
+                    .content("{\"missionDeadlineUtc\":\"2027-01-31\"," + options + "}"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON_INVALID_REQUEST"));
+        }
+        assertThat(jdbc.queryForObject("select count(*) from analysis_run", Long.class)).isEqualTo(count);
+        verifyNoInteractions(horizons);
+    }
+
+    @Test void persistsOriginalTransferOptionsAndFetchesFreshVectorsForEachNewRun() throws Exception {
+        long site = siteId();
+        jdbc.update("""
+                insert into observer_sample select ?, t, 0,
+                case when t < timestamptz '2027-01-04 00:00Z' then -90 else 90 end, 0, 90
+                from generate_series(timestamptz '2027-01-01 00:00Z', timestamptz '2027-01-04 02:00Z', interval '10 minutes') t
+                """, site);
+        when(horizons.position(anyInt(), any())).thenAnswer(call -> new HorizonsClient.Position(
+                (int) call.getArgument(0) == 399 ? new double[]{0,0,0} : new double[]{308000,180000,-45000},
+                new double[]{0,0,0}, new AnalysisEngine.Source(call.getArgument(0), "https://fixture/" + call.getArgument(0), "a".repeat(64), Instant.EPOCH)));
+        String body = """
+                {"missionDeadlineUtc":"2027-01-04T02:00:00Z", "surfaceDurationHours":1,"maxCandidates":1,
+                 "departureState":{"epochUtc":"2027-01-01T00:00:00Z","frame":"ICRF","center":"EARTH",
+                    "positionKm":[7000,500,-100],"velocityKmS":[0,7.5,0],"earthMuKm3S2":398601},
+                 "arrivalTargetRule":{"type":"MOON_RELATIVE_ICRF_OFFSET","offsetKm":[2000,0,0],"minimumAltitudeKm":100},
+                 "transferDurationHours":{"min":72,"max":72,"step":1},
+                 "preLandingDelayHours":{"min":0,"max":0,"step":1},
+                 "lambert":{"branch":"LONG_WAY","positionToleranceKm":0.01}}
+                """;
+        try {
+            UUID previous = null;
+            for (int n = 0; n < 2; n++) {
+                UUID id = submitSurfaceBody(site, body);
+                assertThat(id).isNotEqualTo(previous); previous = id;
+                assertThat(await(id).path("executionStatus").asString()).isEqualTo("SUCCEEDED");
+                var candidate = surfaceReport(id).path("candidates").get(0);
+                assertThat(candidate.path("status").asString()).isEqualTo("PRELIMINARY");
+                assertThat(candidate.path("lambertStatus").asString()).isEqualTo("CONVERGED");
+                assertThat(candidate.path("lambert").path("earthMuKm3S2").asDouble()).isEqualTo(398601);
+                assertThat(candidate.path("lambert").path("branch").asString()).isEqualTo("LONG_WAY");
+                assertThat(jdbc.queryForObject("select count(*) from surface_candidate_result where analysis_run_id = ? and status = 'PRELIMINARY'", Integer.class, id)).isOne();
+                assertThat(jdbc.queryForObject("select count(*) from launch_option_batch where analysis_run_id = ?", Integer.class, id)).isOne();
+                assertThat(jdbc.queryForObject("select analysis_parameters::text from analysis_run where analysis_run_id = ?", String.class, id)).contains("LONG_WAY", "departureState", "maxCandidates");
+                assertThat(jdbc.queryForObject("select source_provenance::text from analysis_run where analysis_run_id = ?", String.class, id)).contains("https://fixture/399", "https://fixture/301");
+            }
+            verify(horizons, times(8)).position(anyInt(), any());
+        } finally { jdbc.update("delete from observer_sample where landing_site_id = ?", site); }
+    }
+
     private UUID submitSurface(long site, String deadline, String hours) throws Exception {
         String body = json.writeValueAsString(java.util.Map.of("missionDeadlineUtc", deadline,
                 "surfaceDurationHours", new java.math.BigDecimal(hours)));
+        return submitSurfaceBody(site, body);
+    }
+
+    private UUID submitSurfaceBody(long site, String body) throws Exception {
         var response = mvc.perform(post("/api/v1/landing-sites/" + site + "/date-opportunities")
                         .contentType("application/json").content(body))
                 .andExpect(status().isAccepted()).andReturn().getResponse();

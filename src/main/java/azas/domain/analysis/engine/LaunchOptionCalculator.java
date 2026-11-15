@@ -8,6 +8,7 @@ import java.util.List;
 
 /** LLSN ver2 launch-options, using the example fixed Earth parking plane. */
 public final class LaunchOptionCalculator {
+    public static String fingerprint() { return EngineFingerprint.of(LaunchOptionCalculator.class); }
     public static final String MODEL = "ILLUSTRATIVE_FIXED_PARKING_PLANE";
     public static final Assumptions ASSUMPTIONS = new Assumptions(51.6, 0, 300, 2 * 3600, 48 * 3600, 120 * 3600, 6 * 3600);
     private static final Instant J2000_NOON = Instant.parse("2000-01-01T12:00:00Z");

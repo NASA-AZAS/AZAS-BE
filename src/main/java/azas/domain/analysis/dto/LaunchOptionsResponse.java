@@ -6,7 +6,13 @@ import java.util.List;
 import java.util.UUID;
 
 public record LaunchOptionsResponse(UUID analysisRunId, long landingSiteId, ExecutionStatus executionStatus,
-        Instant touchdownUtc, String model, boolean launchVerified, Assumptions assumptions, List<Site> launchSites) {
+        Instant touchdownUtc, String model, boolean launchVerified, Assumptions assumptions, List<Site> launchSites,
+        Instant calculatedAt, String engineSha256) {
+
+    public LaunchOptionsResponse(UUID id, long siteId, ExecutionStatus state, Instant touchdown, String model,
+            boolean verified, Assumptions assumptions, List<Site> sites) {
+        this(id, siteId, state, touchdown, model, verified, assumptions, sites, null, null);
+    }
 
     public record Assumptions(double inclinationDeg, int raanDeg, int parkingAltitudeKm, long launchToTliSeconds,
             long minTransferSeconds, long maxTransferSeconds, long arrivalToTouchdownSeconds) {}

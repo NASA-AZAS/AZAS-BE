@@ -27,7 +27,6 @@ import tools.jackson.databind.json.JsonMapper;
 @SpringBootTest
 @Import(TrajectoryTestEphemeris.class)
 @AutoConfigureMockMvc
-@Transactional
 class LaunchOptionsApiTests extends PostgresIntegrationTest {
     private static final String DATE_OPPORTUNITIES = "/api/v1/analyses/{runId}/date-opportunities";
     private static final String PATH = "/api/v1/analyses/{runId}/launch-options";
@@ -37,6 +36,10 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
     private final JsonMapper json = JsonMapper.builder().build();
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired azas.domain.analysis.service.TrajectoryHistoryStore history;
+    @Autowired azas.domain.analysis.service.LaunchOptionService options;
+    @org.junit.jupiter.api.BeforeEach void cleanCatalog() { jdbc.update("delete from launch_site"); }
+    @org.junit.jupiter.api.AfterEach void clearCatalog() { jdbc.update("delete from launch_site"); }
 
     @Test
     void returnsTheFirstSatisfiedWindowOfThisRunAndMatchesEveryReferenceLaunchSite() throws Exception {
@@ -95,6 +98,10 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
         assertThat(unknown.path("windows")).extracting(w -> w.path("surfaceStatus").asString())
                 .containsExactly("UNKNOWN", "UNKNOWN");
 
+        // Completed runs are immutable snapshots; construct a separate mixed-result execution.
+        id = dateRun("SUCCEEDED");
+        window(id, "UNKNOWN", "2027-01-05T00:00:00Z");
+        window(id, "UNKNOWN", "2027-01-22T00:00:00Z");
         window(id, "SATISFIED", TOUCHDOWN);
         var mixed = dateOpportunities(id);
         assertThat(mixed.path("windows")).extracting(w -> w.path("surfaceStatus").asString())
@@ -117,6 +124,7 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
         window(id, "UNKNOWN", TOUCHDOWN);
         mvc.perform(get(PATH, id)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.touchdownUtc").isEmpty()).andExpect(jsonPath("$.data.launchSites").isEmpty());
+        id = dateRun("SUCCEEDED");
         window(id, "SATISFIED", TOUCHDOWN);
         mvc.perform(get(PATH, id)).andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("LAUNCH_SITE_DATA_INCOMPLETE"));
@@ -203,6 +211,49 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
     }
 
     @Test
+    void freezesCatalogAndPersistsIndependentTrajectoryExecutions() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        window(id, "SATISFIED", TOUCHDOWN);
+        jdbc.update("insert into launch_site values (7, 'Kennedy', 28.61, -80.60)");
+        var frozen = report(id);
+        String candidate = frozen.path("launchSites").get(0).path("candidates").get(0).path("candidateId").asString();
+        jdbc.update("update launch_site set longitude_degrees_east = -79.60 where launch_site_id = 7");
+        assertThat(report(id)).isEqualTo(frozen);
+        var first = trajectory(id, candidate);
+        var second = trajectory(id, candidate);
+        String trajectoryId = first.path("trajectoryRunId").asString();
+        assertThat(second.path("trajectoryRunId").asString()).isNotEqualTo(trajectoryId);
+        assertThat(first.path("executionStatus").asString()).isEqualTo("SUCCEEDED");
+        assertThat(first.path("startedAt").isString()).isTrue();
+        assertThat(first.path("finishedAt").isString()).isTrue();
+        assertThat(first.path("engineSha256").asString()).matches("[a-f0-9]{64}");
+        assertThat(jdbc.queryForObject("select count(*) from trajectory_sample where trajectory_run_id = ?", Integer.class, UUID.fromString(trajectoryId))).isEqualTo(701);
+        var stored = json.readTree(mvc.perform(get("/api/v1/analyses/{run}/trajectories/{trajectory}", id, trajectoryId))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        assertThat(stored).isEqualTo(first);
+        mvc.perform(get("/api/v1/analyses/{run}/trajectories", id)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2));
+        mvc.perform(get("/api/v1/analyses/{run}/trajectories/{trajectory}", UUID.randomUUID(), trajectoryId)).andExpect(status().isNotFound());
+        assertThat(jdbc.queryForObject("select count(*) from launch_option_result where analysis_run_id = ?", Integer.class, id)).isOne();
+    }
+
+    @Test void expiredTrajectoryCannotPublishLateSamplesOrOverwriteFailure() throws Exception {
+        UUID id = dateRun("SUCCEEDED");
+        window(id, "SATISFIED", TOUCHDOWN);
+        jdbc.update("insert into launch_site values (7, 'Kennedy', 28.61, -80.60)");
+        var frozen = options.get(id);
+        var site = frozen.launchSites().getFirst();
+        var prepared = history.create(frozen, site, site.candidates().getFirst());
+        jdbc.update("update trajectory_run set expires_at = now() - interval '1 second' where trajectory_run_id = ?", prepared.id());
+        history.expire();
+        history.complete(prepared, azas.domain.analysis.dto.LaunchTrajectoryResponse.builder().status("PRELIMINARY")
+                .samples(java.util.List.of(new azas.domain.analysis.dto.LaunchTrajectoryResponse.Sample(Instant.EPOCH, 0, new double[3], new double[3]))).build());
+        var result = history.get(id, prepared.id());
+        assertThat(result.executionStatus()).isEqualTo("FAILED");
+        assertThat(result.reason()).isEqualTo("ANALYSIS_TIMEOUT");
+        assertThat(result.samples()).isEmpty();
+    }
+
+    @Test
     void rejectsUnknownOrUnfinishedRunsAndCandidatesOutsideTheSelectedRun() throws Exception {
         String kennedy = "Kennedy-1799883120";
         mvc.perform(post(TRAJECTORY, UUID.randomUUID(), kennedy)).andExpect(status().isNotFound())
@@ -221,6 +272,8 @@ class LaunchOptionsApiTests extends PostgresIntegrationTest {
         assertThat(failure.path("status").asString()).isEqualTo("FAILED");
         assertThat(failure.path("reason").asString()).isEqualTo("HORIZONS_UNAVAILABLE");
         assertThat(failure.path("samples").size()).isZero();
+        assertThat(jdbc.queryForObject("select execution_status from trajectory_run where trajectory_run_id = ?", String.class,
+                UUID.fromString(failure.path("trajectoryRunId").asString()))).isEqualTo("FAILED");
     }
 
     private JsonNode trajectory(UUID id, String candidate) throws Exception {

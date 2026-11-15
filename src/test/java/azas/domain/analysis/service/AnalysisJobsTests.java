@@ -92,6 +92,40 @@ class AnalysisJobsTests {
         } finally { jobs.stop(); }
     }
 
+    @Test void trajectoryRequestsShareAdmissionAndTimeoutWithoutStartingMoreWorkers() throws Exception {
+        when(store.create(anyLong(), any(), any())).thenAnswer(call -> prepared(120));
+        when(store.start(any())).thenReturn(true);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(engine.analyze(any())).thenAnswer(call -> {
+            entered.countDown(); release.await();
+            return new AnalysisEngine.Output("PARTIAL", List.of(), List.of(), List.of());
+        });
+        var jobs = new AnalysisJobs(store, engine, opportunities);
+        try {
+            jobs.submit(1, request);
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            jobs.submit(1, request); jobs.submit(1, request);
+            var prepare = mock(java.util.function.Supplier.class);
+            assertThatThrownBy(() -> jobs.compute(prepare)).isInstanceOf(BusinessException.class);
+            verifyNoInteractions(prepare);
+        } finally { release.countDown(); jobs.stop(); }
+
+        var timedJobs = new AnalysisJobs(store, engine, opportunities);
+        var interrupted = new CountDownLatch(1);
+        var reason = new java.util.concurrent.atomic.AtomicReference<String>();
+        try {
+            assertThatThrownBy(() -> timedJobs.compute(() -> new AnalysisJobs.Work<>(Instant.now().plusMillis(200), () -> {
+                try { new CountDownLatch(1).await(); }
+                catch (InterruptedException exception) { interrupted.countDown(); Thread.currentThread().interrupt(); }
+                return false;
+            }, reason::set))).isInstanceOf(AnalysisEngineException.class).hasMessage("ANALYSIS_TIMEOUT");
+            assertThat(reason.get()).isEqualTo("ANALYSIS_TIMEOUT");
+            assertThat(interrupted.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(timedJobs.compute(() -> new AnalysisJobs.Work<>(Instant.now().plusSeconds(5), () -> true, reason::set))).isTrue();
+        } finally { timedJobs.stop(); }
+    }
+
     private AnalysisStore.Prepared prepared(int expiresInSeconds) {
         return new AnalysisStore.Prepared(UUID.randomUUID(), UUID.randomUUID(), Instant.now().plusSeconds(expiresInSeconds),
                 new AnalysisEngine.Input("test", 0, 0, 0, 1, "test", 1737400, false, "a".repeat(64),

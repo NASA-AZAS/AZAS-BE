@@ -87,4 +87,16 @@ public class AnalysisController {
     public ApiResponse<LaunchTrajectoryResponse> trajectory(@PathVariable UUID runId, @PathVariable String candidateId) {
         return ApiResponse.success(trajectories.calculate(runId, candidateId));
     }
+
+    @GetMapping("/analyses/{runId}/trajectories/{trajectoryId}")
+    @Operation(summary = "저장된 궤적 실행 및 표본 조회")
+    public ApiResponse<LaunchTrajectoryResponse> storedTrajectory(@PathVariable UUID runId, @PathVariable UUID trajectoryId) {
+        return ApiResponse.success(trajectories.get(runId, trajectoryId));
+    }
+
+    @GetMapping("/analyses/{runId}/trajectories")
+    @Operation(summary = "최근 궤적 실행 100건 조회")
+    public ApiResponse<List<LaunchTrajectoryResponse.Summary>> trajectoryHistory(@PathVariable UUID runId) {
+        return ApiResponse.success(trajectories.list(runId));
+    }
 }
