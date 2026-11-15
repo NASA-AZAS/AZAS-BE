@@ -22,6 +22,27 @@ azas/
 Java 코드는 공백 4칸으로 들여쓰고 클래스는 PascalCase, 메서드·변수는 camelCase를 사용합니다.
 의존성 변경 시 Gradle로 `gradle.lockfile`을 갱신하고 변경 설정과 함께 커밋합니다.
 
+## Java 빈 줄
+
+- 조건 검사, 반복 처리, 결과 반환처럼 의미가 달라지는 처리 단계 사이에는 빈 줄을 한 줄 둡니다.
+- `if`, `for`, `while`, `try` 앞뒤도 같은 기준을 적용하고 연관된 짧은 문장은 함께 묶습니다.
+- `{` 바로 다음과 `}` 바로 앞에는 빈 줄을 넣지 않습니다. `else`, `catch`, `finally`는 앞 블록에 붙입니다.
+- 문자열과 SQL 텍스트 블록의 줄바꿈은 값의 일부이므로 이 포맷 규칙으로 변경하지 않습니다.
+
+```java
+List<Result> results = new ArrayList<>();
+
+for (Item item : items) {
+    if (!item.isValid()) {
+        continue;
+    }
+
+    results.add(convert(item));
+}
+
+return results;
+```
+
 ## 성공 응답
 
 컨트롤러가 응답 DTO를 `ApiResponse.success(data)`로 반환합니다.

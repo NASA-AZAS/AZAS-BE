@@ -36,6 +36,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public @Nullable ResponseEntity<Object> handleBusinessException(
             BusinessException exception, WebRequest request) {
         ErrorCode errorCode = exception.errorCode();
+
         return handleExceptionInternal(exception, ApiResponse.failure(errorCode),
                 new HttpHeaders(), errorCode.status(), request);
     }
@@ -54,6 +55,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         List<ValidationError> errors = exception.getBindingResult().getAllErrors().stream()
                 .map(this::validationError)
                 .toList();
+
         return handleExceptionInternal(exception,
                 ApiResponse.failure(CommonErrorCode.INVALID_REQUEST, errors), headers, status, request);
     }
@@ -66,7 +68,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         if (exception.isForReturnValue()) {
             return handleExceptionInternal(exception, null, headers, status, request);
         }
+
         List<ValidationError> errors = new ArrayList<>();
+
         for (var result : exception.getParameterValidationResults()) {
             if (result instanceof ParameterErrors parameterErrors) {
                 parameterErrors.getAllErrors().stream().map(this::validationError).forEach(errors::add);
@@ -77,9 +81,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                         .forEach(errors::add);
             }
         }
+
         exception.getCrossParameterValidationResults().stream()
                 .map(error -> new ValidationError("request", message(error)))
                 .forEach(errors::add);
+
         return handleExceptionInternal(exception,
                 ApiResponse.failure(CommonErrorCode.INVALID_REQUEST, errors), headers, status, request);
     }
@@ -91,11 +97,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         if (status.is5xxServerError()) {
             LOG.error("Server error while handling a request", exception);
         }
+
         Object response = body instanceof ApiResponse<?> ? body
                 : ApiResponse.failure(CommonErrorCode.fromStatus(status));
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.putAll(headers);
         responseHeaders.setContentType(MediaType.APPLICATION_JSON);
+
         return super.handleExceptionInternal(exception, response, responseHeaders, status, request);
     }
 
@@ -105,37 +113,49 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             String message = fieldError.isBindingFailure() ? "올바르지 않은 값입니다." : message(error);
             return new ValidationError(fieldError.getField(), message);
         }
+
         return new ValidationError(error.getObjectName(), message(error));
     }
 
     private String message(MessageSourceResolvable error) {
         String message = error.getDefaultMessage();
+
         return message != null ? message : "올바르지 않은 값입니다.";
     }
 
     private String parameterName(MethodParameter parameter) {
         RequestParam requestParam = parameter.getParameterAnnotation(RequestParam.class);
+
         if (requestParam != null) {
             String name = annotationName(requestParam.name(), requestParam.value());
+
             if (!name.isEmpty()) {
                 return name;
             }
         }
+
         PathVariable pathVariable = parameter.getParameterAnnotation(PathVariable.class);
+
         if (pathVariable != null) {
             String name = annotationName(pathVariable.name(), pathVariable.value());
+
             if (!name.isEmpty()) {
                 return name;
             }
         }
+
         RequestHeader requestHeader = parameter.getParameterAnnotation(RequestHeader.class);
+
         if (requestHeader != null) {
             String name = annotationName(requestHeader.name(), requestHeader.value());
+
             if (!name.isEmpty()) {
                 return name;
             }
         }
+
         String name = parameter.getParameterName();
+
         return name != null ? name : "arg" + parameter.getParameterIndex();
     }
 

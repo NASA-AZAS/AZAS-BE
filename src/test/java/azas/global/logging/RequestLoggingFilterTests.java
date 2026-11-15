@@ -115,6 +115,7 @@ class RequestLoggingFilterTests {
         });
         assertThat(response.getHeader("X-Request-ID")).isNotBlank();
         assertThat(capture.events()).hasSize(shouldLog ? 1 : 0);
+
         if (status == 200 && durationMs >= 1000) {
             assertThat(capture.events().getFirst().getLevel()).isEqualTo(Level.WARN);
         }
@@ -194,9 +195,11 @@ class RequestLoggingFilterTests {
         var response = new MockHttpServletResponse();
         filter.doFilter(request, response, (req, res) -> req.startAsync(req, res));
         var context = (MockAsyncContext) request.getAsyncContext();
+
         for (var listener : context.getListeners()) {
             listener.onError(new AsyncEvent(context, request, response, new IllegalStateException("private-error")));
         }
+
         assertThat(capture.events()).isEmpty();
         response.setStatus(503);
         context.complete();
@@ -212,6 +215,7 @@ class RequestLoggingFilterTests {
         var ready = new CountDownLatch(4);
         var release = new CountDownLatch(1);
         var futures = new ArrayList<Future<String>>();
+
         try (var executor = Executors.newFixedThreadPool(4)) {
             for (int index = 0; index < 12; index++) {
                 futures.add(executor.submit(() -> {
@@ -220,24 +224,29 @@ class RequestLoggingFilterTests {
                     concurrentFilter.doFilter(request, response, (req, res) -> {
                         String before = MDC.get("requestId");
                         ready.countDown();
+
                         try {
                             assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
                         } catch (InterruptedException interrupted) {
                             Thread.currentThread().interrupt();
                             throw new ServletException(interrupted);
                         }
+
                         assertThat(MDC.get("requestId")).isEqualTo(before).isEqualTo(response.getHeader("X-Request-ID"));
                     });
                     assertThat(MDC.get("requestId")).isNull();
                     return response.getHeader("X-Request-ID");
                 }));
             }
+
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             release.countDown();
             var ids = new HashSet<String>();
+
             for (var future : futures) {
                 ids.add(future.get(10, TimeUnit.SECONDS));
             }
+
             assertThat(ids).hasSize(12);
             assertThat(capture.events()).hasSize(12);
             assertThat(capture.events().stream().map(event -> event.getMDCPropertyMap().get("requestId")).toList())

@@ -1,0 +1,210 @@
+Project AZAS {
+  database_type: 'PostgreSQL'
+  Note: '매 요청마다 새로 분석한다. 시간별 중간 계산은 저장하지 않고 UTC 날짜별 요약과 필요한 구간만 보존한다. Horizons 운영 캐시·스코어링 제외.'
+}
+
+Enum analysis_type {
+  VISIBILITY
+  DATE_OPPORTUNITIES
+}
+
+Enum execution_status {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+Enum result_status {
+  COMPLETED
+  PARTIAL
+  TRUNCATED
+  FAILED
+}
+
+Enum celestial_body {
+  SUN
+  EARTH
+  JOINT
+}
+
+Enum opportunity_status {
+  ENVIRONMENT_ONLY
+  PRELIMINARY
+  UNKNOWN
+  EXCLUDED
+}
+
+Table terrain_dataset {
+  terrain_dataset_id bigint [pk, increment]
+  dataset_code varchar(100) [not null, note: '예: landing-screen']
+  dataset_version varchar(100) [not null]
+  dataset_sha256 varchar(64) [not null, unique, note: '원본 파일·메타데이터 묶음의 해시']
+  coordinate_reference_frame varchar(100) [not null]
+  reference_sphere_radius_meters integer [not null, note: '현재 1737400 m']
+  distant_terrain_verified boolean [not null, note: '현재 false']
+  source_metadata jsonb [not null, note: '표고·각도 기준, 보간 정책, 원본 파일별 해시와 생성 기록']
+  created_at timestamptz [not null, default: `now()`]
+  indexes {
+    (dataset_code, dataset_version) [unique]
+  }
+  Note: '버전별 데이터를 보존하며 기존 버전을 덮어쓰지 않는다.'
+}
+
+Table landing_site {
+  landing_site_id bigint [pk, increment]
+  terrain_dataset_id bigint [not null]
+  site_code varchar(50) [not null, note: '원본 후보지 코드. 예: Site01']
+  latitude_degrees "double precision" [not null]
+  longitude_degrees "double precision" [not null, note: '원본 CSV 경도. 동경 양수·서경 음수']
+  surface_elevation_meters "double precision" [not null, note: '기준 구면 위 지표 표고']
+  observer_height_above_surface_meters "double precision" [not null, note: '현재 지표 위 1 m']
+  low_slope_square_side_meters "double precision" [not null, note: '최대 경사 5도 이하 정사각형의 한 변']
+  terrain_screening_status varchar(30) [not null, note: '현재 screened. 착륙 안전 확정과 구분']
+  indexes {
+    (terrain_dataset_id, site_code) [unique]
+  }
+}
+
+Table horizon_sample {
+  landing_site_id bigint [not null]
+  azimuth_index smallint [not null, note: '현재 0~3599']
+  azimuth_degrees "double precision" [not null, note: '북쪽 0도에서 시계 방향. 현재 인덱스 x 0.1도']
+  terrain_horizon_degrees "double precision" [not null, note: '음수도 유효']
+  blocking_terrain_horizontal_distance_meters "double precision" [not null]
+  searched_surface_arc_distance_meters "double precision" [not null]
+  indexes {
+    (landing_site_id, azimuth_index) [pk]
+  }
+  Note: '차폐 지형까지 접평면상 수평 거리와 마지막 유효 표본까지 구면상 호 거리를 구분한다.'
+}
+
+Table observer_sample {
+  landing_site_id bigint [not null]
+  observed_at timestamptz [not null, note: '10분 UTC 격자']
+  sun_azimuth_degrees "double precision" [not null]
+  sun_elevation_degrees "double precision" [not null]
+  earth_azimuth_degrees "double precision" [not null]
+  earth_elevation_degrees "double precision" [not null]
+  indexes {
+    (landing_site_id, observed_at) [pk]
+  }
+  Note: 'ver2 태양·지구 관측 입력. 각도의 단위는 도.'
+}
+
+Table analysis_run {
+  analysis_run_id uuid [pk]
+  landing_site_id bigint [not null]
+  analysis_type analysis_type [not null]
+  execution_status execution_status [not null, default: 'PENDING']
+  overall_result_status result_status [note: '전체 실행의 분석 결과 상태. 실행 중에는 NULL']
+  result_schema_version varchar(30)
+  analysis_start_at timestamptz [not null]
+  analysis_end_at timestamptz [not null]
+  sample_interval_minutes integer [not null, note: '기본 계산 간격. 시간 단위 분석이면 60']
+  mission_due_date date [note: '사용자가 선택한 임무 마감일. 날짜 탐색에서 사용']
+  mission_deadline_at timestamptz [note: '마감일 해석 규칙으로 확정해 실제 계산에 사용한 UTC 마감시각']
+  analysis_parameters jsonb [not null, note: '전체 입력 스냅샷. 활동 시간·판정 조건·궤도 설정 포함']
+  calculation_parameters_sha256 varchar(64) [not null, note: '계산 조건 확인용. UNIQUE가 아니며 동일 조건의 재분석을 허용']
+  engine_version varchar(100) [not null]
+  engine_sha256 varchar(64) [not null]
+  failure_code varchar(100)
+  diagnostic_messages text[]
+  source_provenance jsonb [note: '실제로 사용한 Horizons 응답 해시·조회 시각·URL과 모델 가정. 운영 조회용 캐시가 아님']
+  created_at timestamptz [not null, default: `now()`]
+  execution_started_at timestamptz
+  execution_finished_at timestamptz
+  execution_owner uuid [note: '비동기 실행 소유 토큰. API로 생성한 실행에 설정']
+  execution_expires_at timestamptz [note: '대기 시간을 포함한 실행 만료. 만료된 작업만 실패 처리']
+  indexes {
+    (landing_site_id, created_at)
+  }
+  checks {
+    `analysis_end_at > analysis_start_at` [name: 'analysis_run_period_check']
+    `sample_interval_minutes > 0` [name: 'analysis_run_interval_check']
+    `analysis_type <> 'DATE_OPPORTUNITIES' OR (mission_due_date IS NOT NULL AND mission_deadline_at IS NOT NULL)` [name: 'analysis_run_deadline_check']
+  }
+  Note: '매번 새 UUID로 실행·결과를 저장한다. 날짜별 요약은 VISIBILITY 분석에서 생성하며 날짜 탐색의 전체 상태는 이 테이블에 저장한다.'
+}
+
+Table daily_analysis_result {
+  daily_analysis_result_id bigint [pk, increment]
+  analysis_run_id uuid [not null]
+  analysis_date date [not null, note: 'UTC 기준 날짜. 프론트 날짜별 조회 기준']
+  result_status result_status [not null]
+  evaluated_period_start_at timestamptz [not null, note: '해당 날짜에 실제 평가한 범위의 시작']
+  evaluated_period_end_at timestamptz [not null, note: '해당 날짜에 실제 평가한 범위의 종료']
+  sun_visible_time_ratio "double precision" [note: '태양 판정 가능 시간 중 가시 비율. 0~1, 미산출 NULL']
+  earth_visible_time_ratio "double precision" [note: '지구 판정 가능 시간 중 가시 비율. 0~1, 미산출 NULL']
+  joint_visible_time_ratio "double precision" [note: '공동 판정 가능 시간 중 공동 가시 비율. 0~1, 미산출 NULL']
+  sun_known_time_ratio "double precision" [not null, note: '해당 평가 범위 중 태양 판정 가능 비율']
+  earth_known_time_ratio "double precision" [not null]
+  joint_known_time_ratio "double precision" [not null]
+  joint_unknown_time_ratio "double precision" [not null, note: '해당 평가 범위 중 공동 판정 미확인 비율']
+  longest_sun_occultation_hours "double precision"
+  longest_earth_occultation_hours "double precision" [note: '지구 중심 차폐 시간. 실제 통신 링크 판정과 구분']
+  terrain_coverage_status varchar(40) [not null]
+  quality_flags text[]
+  created_at timestamptz [not null, default: `now()`]
+  indexes {
+    (analysis_run_id, analysis_date) [unique]
+  }
+  checks {
+    `evaluated_period_end_at > evaluated_period_start_at` [name: 'daily_result_period_check']
+  }
+  Note: '한 실행에서 날짜당 한 행. 일별 집계는 중간 시간별 계산에서 직접 산출하며 기간 전체의 비율을 일별로 복사하지 않는다. 미평가 날짜의 결과를 임의로 생성하지 않는다.'
+}
+
+Table visibility_window {
+  visibility_window_id bigint [pk, increment]
+  daily_analysis_result_id bigint [not null]
+  celestial_body celestial_body [not null]
+  window_start_at timestamptz [not null]
+  window_end_at timestamptz [not null]
+  boundary_precision_seconds integer [not null, note: '계산 표본에 따른 구간 경계 정밀도']
+  indexes {
+    (daily_analysis_result_id, celestial_body, window_start_at)
+  }
+  checks {
+    `window_end_at > window_start_at` [name: 'visibility_window_period_check']
+  }
+  Note: '태양·지구·공동 가시 구간만 저장한다. 날짜 경계에서 나눠 해당 일별 결과에 연결한다. 시간별 각도·판정 원본 행은 저장하지 않는다.'
+}
+
+Table landing_opportunity_result {
+  landing_opportunity_result_id bigint [pk, increment]
+  analysis_run_id uuid [not null]
+  opportunity_code varchar(160) [not null, note: '모듈의 candidateId. 순위가 아님']
+  opportunity_status opportunity_status [not null]
+  surface_condition_status varchar(30) [not null, note: 'SATISFIED 또는 UNKNOWN']
+  terrain_coverage_status varchar(40) [not null]
+  landing_window_start_at timestamptz [not null]
+  landing_window_end_at timestamptz [not null]
+  proposed_landing_at timestamptz [not null]
+  surface_activity_finished_at timestamptz [not null]
+  deadline_satisfied boolean [not null]
+  launch_at timestamptz
+  translunar_injection_at timestamptz [note: 'TLI 시각. 발사 시각과 구분']
+  lunar_arrival_at timestamptz
+  transfer_duration_hours "double precision"
+  trajectory_solver_status varchar(60) [not null]
+  arrival_position_error_kilometers "double precision"
+  trajectory_verified boolean [not null, note: '현재 엔진은 모두 false']
+  calculation_model_level varchar(40) [not null]
+  decision_reasons text[]
+  provenance_id varchar(64) [not null]
+  trajectory_calculation_details jsonb [note: '예비 궤적 벡터·솔버 내부의 가변 상세만 보존']
+  indexes {
+    (analysis_run_id, opportunity_code) [unique]
+    (analysis_run_id, proposed_landing_at)
+  }
+  Note: 'DATE_OPPORTUNITIES 분석의 결과. 구간이 여러 날짜에 걸칠 수 있어 실행에 직접 연결한다. 후보지·마감시각은 analysis_run을 통해 참조한다.'
+}
+
+Ref: landing_site.terrain_dataset_id > terrain_dataset.terrain_dataset_id [delete: restrict]
+Ref: horizon_sample.landing_site_id > landing_site.landing_site_id [delete: restrict]
+Ref: observer_sample.landing_site_id > landing_site.landing_site_id [delete: restrict]
+Ref: analysis_run.landing_site_id > landing_site.landing_site_id [delete: restrict]
+Ref: daily_analysis_result.analysis_run_id > analysis_run.analysis_run_id [delete: restrict]
+Ref: visibility_window.daily_analysis_result_id > daily_analysis_result.daily_analysis_result_id [delete: restrict]
+Ref: landing_opportunity_result.analysis_run_id > analysis_run.analysis_run_id [delete: restrict]

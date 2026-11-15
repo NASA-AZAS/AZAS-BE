@@ -3,9 +3,62 @@
 로컬은 Docker PostgreSQL, 테스트는 Testcontainers PostgreSQL, 운영은 RDS를 사용합니다.
 앱은 동일한 SPRING_DATASOURCE 환경변수로 연결하며 운영 자격증명은 EC2가 Secrets Manager에서 읽습니다.
 
-## Windows 로컬 실행
+## Docker로 PostgreSQL과 Spring 함께 실행
+
+Docker Desktop과 Compose 2.24 이상을 준비하고 저장소 루트에서 실행합니다. 이 방식에는 호스트 JDK가 필요하지 않습니다.
+
+```powershell
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --build --detach --wait --wait-timeout 180
+```
+
+`postgres`와 `api` 두 서비스를 실행합니다. DB가 준비된 뒤 Spring이 시작하고, Flyway가 테이블만 생성합니다.
+새 DB 데이터는 [DataGrip 업로드 안내](terrain-data.md)에 따라 직접 넣으세요. 기존 데이터는 유지됩니다.
+첫 이미지 빌드에는 JDK·JRE 이미지와 Gradle 의존성을 내려받는 시간이 필요합니다. 이후에는 빌드 캐시를 사용합니다.
+
+컨테이너의 앱 설정은 `.env.example`에 선택적인 `.env`를 덮어써서 전달합니다. 두 파일의 DB 설정과 관계없이
+Compose의 Spring은 항상 `postgres:5432/azas`의 로컬 DB 계정으로 연결합니다. 포트 8000·55432는 로컬 루프백에만 공개합니다.
+`.env`의 선택적 로드는 [Docker Compose의 required 옵션](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/)을 사용합니다.
+
+```powershell
+docker compose --env-file docker/postgres.env --file compose.local.yaml ps
+docker compose --env-file docker/postgres.env --file compose.local.yaml logs --follow api
+```
+
+Swagger는 `http://127.0.0.1:8000/docs`, 후보지 API는 `http://127.0.0.1:8000/api/v1/landing-sites`입니다.
+코드를 변경한 뒤에는 처음의 `up --build` 명령을 다시 실행하세요.
+
+## DataGrip에서 로컬 DB 확인
+
+PostgreSQL 데이터 소스를 만들고 다음 값을 입력한 뒤 연결을 확인합니다.
+
+| 항목 | 값 |
+| --- | --- |
+| Host | `localhost` |
+| Port | `55432` |
+| Database | `azas` |
+| User | `azas_local` |
+| Password | `azas_local_only` |
+| SSL mode | `disable` |
+| JDBC URL | `jdbc:postgresql://localhost:55432/azas?sslmode=disable` |
+
+DataGrip은 호스트에서 실행하므로 `localhost:55432`를 사용합니다. Docker 안의 Spring만 서비스명 `postgres:5432`를 사용합니다.
+연결 후 `public` 스키마를 선택하고 새로고침하면 업무 테이블 8개와 `flyway_schema_history`가 보입니다.
+Spring 시작 전에는 마이그레이션이 실행되지 않아 테이블이 없을 수 있습니다.
+
+```sql
+SELECT count(*) FROM landing_site;   -- 수동 업로드 후 27
+SELECT count(*) FROM horizon_sample; -- 수동 업로드 후 97200
+SELECT landing_site_id, site_code, latitude_degrees, longitude_degrees
+FROM landing_site ORDER BY site_code;
+```
+
+새 DB에서는 분석 요청 전 `analysis_run`과 결과 테이블이 비어 있는 것이 정상입니다. 데이터베이스 UI 컨테이너는 추가하지 않습니다.
+
+## Windows에서 Spring 직접 실행
 
 JDK 21과 Docker Desktop을 준비한 뒤 저장소 루트에서 실행합니다.
+Compose의 `api`가 실행 중이면 먼저 `docker compose --env-file docker/postgres.env --file compose.local.yaml stop api`로 중지해
+8000번 포트가 겹치지 않도록 합니다. 기존 PostgreSQL 컨테이너와 데이터 볼륨은 계속 사용합니다.
 
 ```powershell
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
@@ -27,8 +80,10 @@ SPRING_DATASOURCE_PASSWORD=azas_local_only
 
 ## Linux/macOS와 IDE
 
+Compose의 `api`가 실행 중이면 먼저 `docker compose --env-file docker/postgres.env --file compose.local.yaml stop api`로 중지합니다.
+
 ```bash
-docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait
+docker compose --env-file docker/postgres.env --file compose.local.yaml up --detach --wait postgres
 export SPRING_DATASOURCE_URL='jdbc:postgresql://localhost:55432/azas?sslmode=disable'
 export SPRING_DATASOURCE_USERNAME=azas_local
 export SPRING_DATASOURCE_PASSWORD=azas_local_only
@@ -56,10 +111,16 @@ docker compose --env-file docker/postgres.env --file compose.local.yaml down
 
 ## 스키마 변경
 
-Flyway는 앱 시작 시 `src/main/resources/db/migration/V<번호>__<설명>.sql`을 순서대로 적용합니다.
-첫 업무 테이블은 `V1__...sql`과 Entity를 함께 추가하세요. 아직 운영용 업무 SQL은 없습니다.
+Flyway는 앱 시작 시 SQL과 Java 마이그레이션을 버전 순서대로 적용합니다.
+`V1__create_terrain_and_analysis_tables.sql`은 확정 ERD의 7개 테이블을 생성하고,
+Java 마이그레이션 `V2__import_landing_screen_v1`은 기존 체크섬을 유지하는 빈 이력입니다.
+V4는 후보지 PK와 관측 시각을 복합 키로 사용하는 `observer_sample`을 생성합니다. ver2 관측 CSV는 배포 후 DataGrip에서 수동 업로드합니다.
+후보지 CSV는 앱에서 읽지 않으며 DataGrip으로 직접 업로드합니다.
+Java 마이그레이션은 `src/main/java/db/migration/`, SQL은 `src/main/resources/db/migration/`에 있습니다.
+데이터 출처·행 수·버전 갱신 정책은 [지형 데이터 가이드](terrain-data.md)를 참고하세요.
 JPA는 `ddl-auto: validate`, `open-in-view: false`이며 스키마 생성·변경은 Flyway가 담당합니다.
-Flyway clean은 비활성화하고 기존 SQL 체크섬을 검증합니다. 적용한 파일은 수정하지 말고 새 버전을 추가하세요.
+Flyway clean은 비활성화하고 기존 SQL과 V2의 고정 체크섬을 검증합니다.
+스키마 변경은 기존 SQL을 수정하지 말고 새 버전을 추가하세요.
 
 후보 앱이 시작할 때도 운영 migration이 실행되므로 기존 앱과 호환되는 변경부터 적용해야 합니다.
 이미지 롤백은 SQL을 되돌리지 않습니다. 컬럼 추가 등 호환되는 변경과 데이터 이관을 먼저 진행하고,
@@ -73,6 +134,9 @@ Flyway clean은 비활성화하고 기존 SQL 체크섬을 검증합니다. 적�
 
 Docker가 실행 중이면 Testcontainers가 별도 DB를 만듭니다. 로컬 개발 DB와 `.env`는 테스트에 사용하지 않습니다.
 실제 PostgreSQL에서 JPA 저장·조회, Flyway 검증·중복 적용 방지와 실패 SQL의 트랜잭션 롤백을 검사합니다.
+새 DB는 데이터 없이 시작하는지, DataGrip용 CSV로 27개 후보지·97,200개 표본이 들어가는지,
+기존 V2 이력과 데이터가 보존되는지 검증합니다. 앱 자동 적재 테스트는 제거했습니다.
+분석 모델은 PostgreSQL enum·JSONB·배열·UTC 시각과 미산출 `NULL`을 실제 저장·조회합니다.
 테스트 엔티티와 SQL은 실행 JAR에 포함되지 않습니다.
 
 Hikari 풀은 최대 3개, minimum idle 0입니다. `/health`는 프로세스 응답,

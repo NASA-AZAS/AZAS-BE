@@ -17,6 +17,7 @@ public final class LogCapture extends AppenderBase<ILoggingEvent> implements Aut
 
     public LogCapture(Class<?>... types) {
         start();
+
         for (Class<?> type : types) {
             Logger logger = (Logger) LoggerFactory.getLogger(type);
             loggers.put(logger, new LoggerState(logger.getLevel(), logger.isAdditive()));
@@ -43,6 +44,7 @@ public final class LogCapture extends AppenderBase<ILoggingEvent> implements Aut
             logger.setLevel(state.level());
             logger.setAdditive(state.additive());
         });
+
         stop();
     }
 

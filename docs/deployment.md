@@ -1,6 +1,6 @@
 # 앱 CI/CD와 EC2의 경계
 
-이 레포는 Spring 앱, 실행 이미지, 로컬 PostgreSQL Compose와 GitHub Actions를 관리합니다.
+이 레포는 Spring 앱, 실행 이미지, 로컬 PostgreSQL·Spring Compose와 GitHub Actions를 관리합니다.
 운영 Compose·Nginx·인증서 갱신·배포 도구·AWS 인프라 템플릿은 EC2에서 관리합니다.
 
 ## 자동 배포 흐름
@@ -8,6 +8,10 @@
 `main` 푸시 → 변경 분류·문서 검사 → 앱 변경이 있으면 Java/PostgreSQL 테스트 → Docker 빌드·검증 → ECR SHA 이미지 업로드 → OIDC/SSM → EC2 배포.
 PR에서는 검사만 수행하고 `workflow_dispatch`의 main 실행으로 수동 재배포할 수 있습니다.
 기존 workflow job 이름과 OIDC·ECR·제한된 SSM 호출 방식은 유지합니다.
+
+개발은 최신 `dev`에서 작업 브랜치를 만들고 `dev` 대상 PR로 진행합니다.
+모든 PR에 기존 CI가 적용되며, `dev` 푸시·병합은 배포 워크플로를 시작하지 않습니다.
+운영 릴리스는 `dev → main` PR로 진행합니다. ECR 업로드·EC2 배포는 계속 `main`으로 제한합니다.
 
 SSM 문서 `azas-api-deploy`는 이미지 URI 하나를 받아 EC2의 `/usr/local/sbin/azas-deploy`를 실행합니다.
 서버 도구가 Secret을 조회해 후보 환경 파일을 만들고 이미지의 Docker HEALTHCHECK로 후보 앱을 검사합니다.

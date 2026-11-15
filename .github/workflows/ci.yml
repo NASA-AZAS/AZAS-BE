@@ -113,13 +113,36 @@ jobs:
       - name: Build production image
         run: docker build --tag azas-api:ci .
 
-      - name: Check local PostgreSQL Compose
+      - name: Check local PostgreSQL and Spring Compose
         run: |
           docker compose --env-file docker/postgres.env --file compose.local.yaml config --quiet
           docker compose --env-file docker/postgres.env --file compose.local.yaml \
             up --detach --wait --wait-timeout 90 postgres
           docker compose --env-file docker/postgres.env --file compose.local.yaml \
             exec -T postgres psql -U azas_local -d azas --set ON_ERROR_STOP=1 --command 'SELECT 1'
+          docker compose --env-file docker/postgres.env --file compose.local.yaml \
+            up --build --detach --wait --wait-timeout 180
+          # New databases get only schemas. Import these fixtures only into this disposable CI DB.
+          empty_count=$(docker compose --env-file docker/postgres.env --file compose.local.yaml exec -T postgres \
+            psql -U azas_local -d azas --tuples-only --no-align --command 'SELECT count(*) FROM terrain_dataset')
+          test "$empty_count" = '0'
+          for file in data/import/*.csv; do
+            name=$(basename "$file" .csv)
+            table=${name#*_}
+            columns=$(head -n 1 "$file")
+            docker compose --env-file docker/postgres.env --file compose.local.yaml cp "$file" "postgres:/tmp/$table.csv"
+            docker compose --env-file docker/postgres.env --file compose.local.yaml exec -T postgres \
+              psql -U azas_local -d azas --set ON_ERROR_STOP=1 \
+              --command "\copy public.$table ($columns) FROM '/tmp/$table.csv' WITH (FORMAT csv, HEADER true)"
+          done
+          docker compose --env-file docker/postgres.env --file compose.local.yaml exec -T postgres \
+            psql -U azas_local -d azas --set ON_ERROR_STOP=1 < data/import/after-import.sql
+          curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8000/api/v1/landing-sites | \
+            jq --exit-status '.success == true and (.data | length) == 27'
+          counts=$(docker compose --env-file docker/postgres.env --file compose.local.yaml exec -T postgres \
+            psql -U azas_local -d azas --tuples-only --no-align --set ON_ERROR_STOP=1 \
+            --command 'SELECT (SELECT count(*) FROM landing_site), (SELECT count(*) FROM horizon_sample)')
+          test "$counts" = '27|97200'
           docker compose --env-file docker/postgres.env --file compose.local.yaml down --volumes
 
       - name: Check container health endpoint

@@ -5,6 +5,7 @@
 *.pem
 *.key
 src/test
+data
 .gradle
 build
 .idea
