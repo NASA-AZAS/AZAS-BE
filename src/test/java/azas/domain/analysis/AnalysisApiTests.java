@@ -324,6 +324,8 @@ class AnalysisApiTests extends PostgresIntegrationTest {
                 assertThat(candidate.path("lambertStatus").asString()).isEqualTo("CONVERGED");
                 assertThat(candidate.path("lambert").path("earthMuKm3S2").asDouble()).isEqualTo(398601);
                 assertThat(candidate.path("lambert").path("branch").asString()).isEqualTo("LONG_WAY");
+                assertThat(jdbc.queryForList("select decision_reasons[1] from landing_opportunity_result where analysis_run_id = ?", String.class, id))
+                        .containsExactly("SURFACE_CRITERIA_SATISFIED");
                 assertThat(jdbc.queryForObject("select count(*) from surface_candidate_result where analysis_run_id = ? and status = 'PRELIMINARY'", Integer.class, id)).isOne();
                 assertThat(jdbc.queryForObject("select count(*) from launch_option_batch where analysis_run_id = ?", Integer.class, id)).isOne();
                 assertThat(jdbc.queryForObject("select analysis_parameters::text from analysis_run where analysis_run_id = ?", String.class, id)).contains("LONG_WAY", "departureState", "maxCandidates");

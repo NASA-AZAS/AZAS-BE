@@ -170,7 +170,7 @@ public class AnalysisStore {
                     .landingWindowStartAt(window.startUtc()).landingWindowEndAt(window.endUtc())
                     .proposedLandingAt(window.startUtc()).surfaceActivityFinishedAt(window.startUtc().plus(duration))
                     .deadlineSatisfied(true).trajectorySolverStatus("NOT_EVALUATED").trajectoryVerified(false)
-                    .calculationModelLevel("ENVIRONMENT_ONLY").decisionReasons(new String[]{"TRANSFER_INPUTS_MISSING"})
+                    .calculationModelLevel("ENVIRONMENT_ONLY").decisionReasons(new String[]{"SURFACE_CRITERIA_SATISFIED"})
                     .provenanceId(provenanceId).build());
         }
         history.save(run.getId(), result.candidates());
