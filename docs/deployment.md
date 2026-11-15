@@ -1,6 +1,6 @@
 # 앱 CI/CD와 EC2의 경계
 
-이 레포는 Spring 앱, 실행 이미지, 로컬 PostgreSQL Compose와 GitHub Actions를 관리합니다.
+이 레포는 Spring 앱, 실행 이미지, 로컬 PostgreSQL·Spring Compose와 GitHub Actions를 관리합니다.
 운영 Compose·Nginx·인증서 갱신·배포 도구·AWS 인프라 템플릿은 EC2에서 관리합니다.
 
 ## 자동 배포 흐름

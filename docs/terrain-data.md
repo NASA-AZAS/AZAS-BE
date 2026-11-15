@@ -1,8 +1,44 @@
-# 지형 데이터 모델과 초기 적재
+# 지형 데이터와 DataGrip 수동 업로드
 
-새 DB로 앱을 시작하면 Flyway가 테이블을 생성하고 후보지 27개와 지평선 표본 97,200개를 적재합니다.
-기존 로컬 실행 명령을 그대로 사용하며 별도 CSV 경로·환경변수·수동 적재 명령은 필요하지 않습니다.
-후보지 조회와 PK·기간 기반 가시성 분석 API는 [후보지·분석 API 가이드](analysis-api.md)를 참고하세요.
+**Flyway는 스키마를 만들고, 데이터는 DataGrip에서 직접 올립니다.**
+앱 시작이나 배포 시 CSV를 읽거나 자동 적재하지 않습니다. 별도 초기화 프로그램도 없습니다.
+이미 후보지 27개·지평선 표본 97,200개가 있는 DB는 그대로 사용하면 됩니다.
+
+## 새 DB에 업로드
+
+1. Spring을 한 번 실행해 Flyway가 테이블을 만들게 합니다. 로컬은 [Compose 실행](database.md)을 사용합니다.
+2. DataGrip에서 대상 PostgreSQL에 연결하고 `public` 스키마를 새로고침합니다. RDS는 기존 승인된 연결 경로와 계정을 사용합니다.
+3. 아래 순서로 **기존 테이블을 우클릭 → Import/Export → Import Data from File(s)** 에서 CSV를 선택합니다.
+4. UTF-8, 쉼표 구분, 큰따옴표 인용, **First row is header**를 선택하고 같은 이름의 컬럼끼리 매핑합니다.
+5. 세 파일의 업로드가 모두 끝나면 [after-import.sql](../data/import/after-import.sql)을 같은 DB의 쿼리 콘솔에서 실행합니다.
+
+| 순서 | 업로드 파일 | 대상 테이블 | 행 수 |
+| --- | --- | --- | --- |
+| 1 | [01_terrain_dataset.csv](../data/import/01_terrain_dataset.csv) | `public.terrain_dataset` | 1 |
+| 2 | [02_landing_site.csv](../data/import/02_landing_site.csv) | `public.landing_site` | 27 |
+| 3 | [03_horizon_sample.csv](../data/import/03_horizon_sample.csv) | `public.horizon_sample` | 97,200 |
+
+스키마에 파일을 드래그해 새 테이블을 만드는 대신 Flyway가 생성한 **기존 테이블**을 선택합니다.
+CSV의 PK·FK를 모두 그대로 매핑하세요. `created_at`은 파일에 없으며 DB 기본값을 사용합니다.
+`source_metadata`는 큰따옴표로 감싼 JSON 한 칸입니다. 미리보기에서 여러 컬럼으로 쪼개지지 않았는지 확인하세요.
+DataGrip 공식 안내: [CSV를 기존 테이블에 가져오기](https://www.jetbrains.com/help/datagrip/import-data.html).
+
+이 파일은 **지형 테이블 세 개가 모두 비어 있는 DB의 최초 업로드용**입니다.
+데이터셋 PK 1과 후보지 PK 1~27, 후보지별 방위각 인덱스 0~3599를 포함합니다.
+이미 적재된 DB에 다시 넣거나 기존 PK를 바꾸지 마세요. 과거 분석 결과가 후보지 PK를 참조합니다.
+중간에 업로드가 실패하면 반영된 행과 오류를 확인하고 복구한 뒤 진행하세요. 자동 덮어쓰기·초기화는 없습니다.
+`after-import.sql`은 수동 입력한 PK 이후부터 ID가 생성되도록 시퀀스를 맞추고 행 수를 확인합니다.
+
+새 DB는 업로드 전에도 앱과 DB readiness가 정상 시작하지만 후보지 API는 `TERRAIN_DATASET_NOT_FOUND`를 반환합니다.
+모든 파일의 업로드가 끝난 뒤 [후보지 조회·분석 API](analysis-api.md)를 사용하세요.
+데이터 업로드 후 앱을 재시작할 필요는 없습니다.
+
+## 기존 DB와 Flyway 이력
+
+V1은 테이블·제약을, V3는 분석 실행 관리 컬럼을 생성합니다. 기존 SQL은 변경하지 않습니다.
+과거 CSV 적재를 담당한 Java V2는 기존 DB 검증을 위해 이름·유형·체크섬 `2091428245`를 유지하는 빈 이력으로 남깁니다.
+V2는 새 DB에서도 데이터를 쓰지 않습니다. 기존 DB의 데이터·PK·분석 이력·Flyway 기록을 수정하거나 `repair`하지 않습니다.
+이후 스키마 변경은 새 Flyway 버전으로 추가하고 데이터 변경은 필요한 경우 직접 수행합니다.
 
 ## 테이블과 저장 범위
 
@@ -28,75 +64,30 @@
 실행 성공(`SUCCEEDED`)과 과학 결과의 불완전성(`PARTIAL`)은 별도 상태입니다.
 마감일은 사용자가 선택한 날짜와 실제 적용한 마감 시각을 함께 보관합니다.
 
-## 원본과 검증
+## 데이터 출처와 기준값
 
-분석 모듈 `LLSN-Java21`에서 전달된 `landing-screen` 번들을
-`src/main/resources/terrain/landing-screen/v1/`에 원본 바이트 그대로 보관합니다.
-실행 JAR에도 포함되므로 저장소 밖의 분석 폴더나 파일 경로에 의존하지 않습니다.
+`data/import/`는 원본 `LLSN-Java21`의 `landing-screen` 데이터를 DB 컬럼 형태로 정리한 정적 파일입니다.
+앱 소스·리소스·실행 JAR·Docker 이미지에는 CSV와 적재 코드가 포함되지 않습니다.
+테스트만 이 파일을 별도 PostgreSQL에 업로드해 조회·분석을 검증합니다. CI는 일회용 DB에만 테스트 데이터를 넣습니다.
 
-| 원본 | 용도 |
-| --- | --- |
-| `candidates.csv` | 후보지 27개의 좌표·지표 표고·선별 결과 |
-| `<site>_horizon.csv` 27개 | 사이트별 3,600행, 합계 97,200행 |
-| `metadata.json` | 좌표계·높이·각도·NoData 정책 |
-| `product_registry.json` | 원본 30개 파일의 바이트 수·SHA-256 |
-| `Site01_mmgis.geojson` | Site01 좌표·지표 표고·관측 높이 교차 검증 |
-| `HORIZON_METADATA.md` | 생산자의 이관 기록 |
+- 데이터셋: `landing-screen` / `2026-11-14-v1`
+- 원본 번들 SHA-256: `7ca8a99525a7fb8c9827121bfc1cbeff054355344d3a76f3316da9d8e0d904ad`
+- `source_metadata`: 원본 `metadata`와 파일별 SHA-256을 담은 `productRegistry` 전체
+- 좌표: `MOON_ME`/DE421 달 중심 위경도, 동경 양수·서경 음수
+- 기준 구면 반지름: 1,737,400m, 모든 관측점은 지표 위 1m
+- 방위각: 현지 북쪽 0°부터 시계 방향, 0.1° 간격, 사이트당 3,600행
 
-CSV 28개에서 적재하는 데이터 행은 총 97,227개입니다. TIFF·JAR·예제 분석 결과는 포함하지 않습니다.
-`site_code`는 `Site01`, `Site20v2`, `Haworth`, `LM1` 등 원본 식별자를 그대로 사용하며 연속 번호로 바꾸지 않습니다.
-데이터셋 코드는 `landing-screen`, 버전은 `2026-11-14-v1`입니다.
-`source_metadata`는 `metadata`와 `productRegistry`를 포함하며, 번들 해시는 두 JSON과 모든 등록 파일을 포함합니다.
-`.gitattributes`에서 원본 번들의 줄바꿈 변환을 막아 Windows와 CI의 체크섬을 일치시킵니다.
+Site01의 방위각 220° 기준값은 고도각 8.1972760°, 차폐 수평 거리 5,730.6m, 탐색 구면 호 거리 311,785m입니다.
+음수 지평선 고도각도 유효합니다. 두 거리의 의미와 지표 표고·관측 높이는 각각 별도 컬럼으로 유지합니다.
+원본의 후보지 순서와 `Site01`, `Site20v2`, `Haworth`, `LM1` 등의 코드를 보존합니다.
+DEM 범위 밖 지형·태양 원반·실제 통신 링크는 별도 검증 대상이며 `distant_terrain_verified=false`입니다.
 
-적재 전에 아래 조건을 검사하며 실패하면 앱 시작을 중단합니다.
-
-- 등록 파일의 경로·바이트 수·SHA-256, 후보지와 프로파일의 일대일 대응
-- 후보지 27개, 사이트별 3,600행, 방위각 `0.0° ~ 359.9°`의 `0.1°` 격자
-- 숫자의 유한성, 위경도·각도·거리 범위, 필수 헤더와 중복 여부
-- `MOON_ME`/DE421 달 중심 좌표, 기준 구면 반지름 1,737,400m, 지표 위 관측 높이 1m
-- 현지 북쪽 0°·시계 방향 방위각, 현지 수평면 기준 고도각, Site01 GeoJSON과 CSV의 일치
-
-경도는 원본의 동경 양수·서경 음수 표기를 보존합니다. 지표 표고와 지표 위 관측 높이는 별도 컬럼입니다.
-음수 지평선 고도각도 유효하며 0으로 바꾸지 않습니다.
-차폐 지형의 접평면 수평 거리와 탐색한 구면 호 거리는 서로 다른 컬럼으로 유지합니다.
-Site01의 방위각 220° 기준값은 고도각 8.1972760°, 차폐 수평 거리 5,730.6m, 탐색 거리 311,785m입니다.
-
-이 검증은 전달된 파일의 무결성과 선언된 메타데이터의 일치 여부를 확인합니다.
-DEM 재계산이나 독립적인 과학 검증을 수행하지 않으며 `distant_terrain_verified=false`를 유지합니다.
-CSV 밖 지형·태양 원반·실제 통신 링크 조건의 검증은 별도입니다.
-
-## 적재 트랜잭션과 버전 관리
-
-`V1__create_terrain_and_analysis_tables.sql`이 테이블과 FK·유일성·값 범위 제약을 생성합니다.
-`V2__import_landing_screen_v1`은 검증된 번들을 JDBC 500행 배치로 적재합니다.
-97,200개 엔티티를 JPA 영속성 컨텍스트에 올리지 않으며, Flyway가 전체 트랜잭션과 실행 이력을 관리합니다.
-중간 배치에서 실패하면 데이터셋·후보지·표본이 함께 롤백됩니다.
-
-재시작 시 Flyway 검증 후 이미 적용된 적재를 건너뜁니다.
-적재기를 같은 입력으로 다시 실행해도 행을 추가하지 않으며, 같은 버전의 해시가 다르면 덮어쓰지 않고 실패합니다.
-V2 체크섬은 번들 해시에서 계산합니다. 적용 후 원본 파일·SQL·Java 적재 코드를 수정하지 마세요.
-데이터가 바뀌면 새로운 리소스 버전과 새 마이그레이션을 추가하고 기존 데이터셋을 보존합니다.
-이전 분석 실행은 후보지를 통해 당시 데이터셋 버전을 계속 참조합니다.
-
-## Repository 조회와 로컬 검증
-
-후보지는 데이터셋 버전별로 조회하고 분석 입력용 지평선은 방위각 인덱스 순서로 가져옵니다.
-조회·변환 서비스는 트랜잭션 안에서 필요한 입력 DTO를 구성하면 됩니다.
-
-```java
-var dataset = datasetRepository.findByDatasetCodeAndDatasetVersion(
-        "landing-screen", "2026-11-14-v1").orElseThrow();
-var sites = landingSiteRepository.findByTerrainDatasetIdOrderBySiteCode(dataset.getId());
-var samples = horizonSampleRepository.findByIdLandingSiteIdOrderByIdAzimuthIndex(siteId);
-```
-
-JDK 21과 Docker가 준비된 상태에서 실행합니다.
+## 검증
 
 ```powershell
 .\gradlew.bat --no-daemon check bootJar
 ```
 
-테스트는 별도 Testcontainers PostgreSQL을 사용해 전체 행 수·기준값·중복 방지·중간 실패 롤백과
-JPA의 enum·JSONB·배열·미산출 값 보존을 검증합니다. 운영 DB나 Horizons API는 호출하지 않습니다.
-일반 로컬 실행과 DB 접속 정보는 [DB 개발 가이드](database.md)를 참고하세요.
+Testcontainers PostgreSQL에서 새 DB의 빈 스키마, 세 CSV 업로드, 기존 V2 체크섬 호환성과 데이터 보존,
+27개 후보지·97,200개 표본·Site01 기준값·DB 제약·분석 결과 저장을 검증합니다.
+운영 RDS나 EC2에는 접속하지 않습니다.

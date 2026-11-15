@@ -74,13 +74,13 @@ POST는 HTTP 202와 상태 조회용 `Location` 헤더를 반환합니다.
 Controller → AnalysisJobs / AnalysisStore
                → AnalysisEngine.analyze(Input)
                    → LlsnAnalysisAdapter
-                       → HorizonsClient + llsn.VisibilityCalculator
+                       → HorizonsClient + VisibilityCalculator
                ← AnalysisEngine.Output → 일별 결과·가시 구간 저장
 ```
 
 - `AnalysisEngine`: 호출 입력·반환 계약. API와 저장 계층은 이 계약만 사용합니다.
 - `LlsnAnalysisAdapter`: DB 입력과 계산 코드의 입력 연결, 계산 결과를 `Output`으로 매핑하는 지점입니다.
-- `engine/llsn/VisibilityCalculator`: 지평선 보간·판정·UTC 일별 집계 계산입니다.
+- `engine/VisibilityCalculator`: 지평선 보간·판정·UTC 일별 집계 계산입니다.
 - `HorizonsClient`: 외부 HTTP·좌표/시각/프레임 검증입니다. 파일 캐시를 읽거나 쓰지 않습니다.
 
 계산 코드의 내부 형식만 바뀌면 Adapter에서 연결합니다. 새 지표·의미 변경이 생기면 계약·저장 컬럼도 검토해야 합니다.
